@@ -33,6 +33,7 @@
 	let card = $state(/** @type {any} */ (null));
 	let lastCardSeq = -1;
 	let logEl = $state();
+	let cityImages = $state(/** @type {Record<string, any>} */ ({}));
 
 	const inviteUrl = $derived(`${page.url.origin}/room/${data.code}`);
 	const myPlayer = $derived(game?.players.find((p) => p.id === me?.id));
@@ -55,6 +56,10 @@
 	}
 
 	onMount(() => {
+		fetch('/api/city-images')
+			.then((r) => (r.ok ? r.json() : {}))
+			.then((m) => (cityImages = m))
+			.catch(() => {});
 		const s = getSocket();
 		const onState = (st) => {
 			if (lastCardSeq === -1) lastCardSeq = st.lastCard?.seq ?? 0;
@@ -255,14 +260,14 @@
 {:else}
 	<main class="game">
 		<div class="board-wrap">
-			<Board {game} onTile={(i) => (selectedTile = i)}>
+			<Board {game} images={cityImages} onTile={(i) => (selectedTile = i)}>
 				{#snippet center()}
 					<div class="hub">
 						<div class="decks">
 							<div class="deck musibah">Musibah</div>
-							<div class="arisan">
-								<small>Kas Arisan</small>
-								<strong>{formatRp(game.arisan)}</strong>
+							<div class="kas">
+								<small>🏛️ Kas Negara</small>
+								<strong>{formatRp(game.kasNegara)}</strong>
 							</div>
 							<div class="deck takdir">Takdir</div>
 						</div>
@@ -377,7 +382,7 @@
 	</main>
 
 	{#if selectedTile !== null}
-		<TileSheet {game} index={selectedTile} meId={me?.id} onAction={act} onClose={() => (selectedTile = null)} />
+		<TileSheet {game} images={cityImages} index={selectedTile} meId={me?.id} onAction={act} onClose={() => (selectedTile = null)} />
 	{/if}
 
 	{#if card}
@@ -584,17 +589,17 @@
 		background: var(--angkot);
 		transform: rotate(6deg);
 	}
-	.arisan {
+	.kas {
 		display: grid;
 		background: #fff;
 		border: 2px dashed var(--ink);
 		border-radius: 10px;
 		padding: 0.3rem 0.6rem;
 	}
-	.arisan small {
+	.kas small {
 		font-size: 0.7rem;
 	}
-	.arisan strong {
+	.kas strong {
 		font-size: clamp(0.8rem, 1.8vw, 1.1rem);
 	}
 	.dice {

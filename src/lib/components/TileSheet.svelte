@@ -9,8 +9,9 @@
 		formatRp
 	} from '$lib/shared/board.js';
 
-	/** @type {{ game:any, index:number, meId:string, onAction:(a:any)=>void, onClose:()=>void }} */
-	let { game, index, meId, onAction, onClose } = $props();
+	/** @type {{ game:any, images?:Record<string, any>, index:number, meId:string, onAction:(a:any)=>void, onClose:()=>void }} */
+	let { game, images = {}, index, meId, onAction, onClose } = $props();
+	const photo = $derived(images[TILES[index].name]);
 
 	const t = $derived(TILES[index]);
 	const own = $derived(game.tiles[index]);
@@ -27,6 +28,14 @@
 
 <dialog bind:this={dialog} onclose={onClose} onclick={(e) => e.target === dialog && dialog.close()}>
 	<div class="sheet">
+		{#if photo}
+			<figure class="photo">
+				<img src={photo.url} alt={`Foto ${t.name}`} referrerpolicy="no-referrer" />
+				<figcaption>
+					Foto: <a href={photo.page} target="_blank" rel="noopener">{photo.credit}</a>{photo.license ? `, ${photo.license}` : ''}
+				</figcaption>
+			</figure>
+		{/if}
 		<header style:background={group?.color ?? 'var(--angkot)'} class:dark={group && ['navy', 'merah', 'hijau', 'coklat', 'pink'].includes(t.group)}>
 			{#if group}<small>{group.label}</small>{/if}
 			<h2>{t.name}</h2>
@@ -36,7 +45,7 @@
 			{#if t.desc}<p>{t.desc}</p>{/if}
 			{#if t.type === 'musibah'}<p>Ambil kartu Musibah. Siap-siap keluar uang.</p>{/if}
 			{#if t.type === 'takdir'}<p>Ambil kartu Takdir. Biasanya rezeki, kadang perjalanan.</p>{/if}
-			{#if t.type === 'arisan'}<p>Kas Arisan sekarang: <strong>{formatRp(game.arisan)}</strong></p>{/if}
+			{#if t.type === 'bansos'}<p>Kas Negara sekarang: <strong>{formatRp(game.kasNegara)}</strong></p>{/if}
 
 			{#if t.type === 'property'}
 				<table>
@@ -130,6 +139,32 @@
 		border-radius: var(--radius-m);
 		box-shadow: 6px 6px 0 var(--ink);
 		overflow: hidden;
+	}
+	.photo {
+		margin: 0;
+		position: relative;
+		height: 160px;
+		border-bottom: 3px solid var(--ink);
+		background: var(--ink);
+	}
+	.photo img {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.photo figcaption {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		padding: 0.25rem 0.6rem;
+		font-size: 0.7rem;
+		color: #fff;
+		background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+	}
+	.photo figcaption a {
+		color: #fff;
 	}
 	header {
 		padding: 0.9rem 1.1rem;

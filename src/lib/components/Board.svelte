@@ -2,13 +2,13 @@
 	import { TILES, GROUPS, HOUSE_LEVELS, TOKENS, formatRp } from '$lib/shared/board.js';
 	import { tilePos, isCorner } from '$lib/layout.js';
 
-	/** @type {{ game: any, onTile: (i:number)=>void, center: import('svelte').Snippet }} */
-	let { game, onTile, center } = $props();
+	/** @type {{ game: any, images?: Record<string, any>, onTile: (i:number)=>void, center: import('svelte').Snippet }} */
+	let { game, images = {}, onTile, center } = $props();
 
 	const tokenIcon = (id) => TOKENS.find((t) => t.id === id)?.icon ?? '❓';
 	const playerById = $derived(Object.fromEntries(game.players.map((p) => [p.id, p])));
 
-	const CORNER_ICON = { start: '💰', jail: '⚖️', arisan: '🎉', gotojail: '🚔' };
+	const CORNER_ICON = { start: '💰', jail: '⚖️', bansos: '🏛️', gotojail: '🚔' };
 	const TYPE_ICON = { station: '🚆', utility: '', tax: '🧾', musibah: '⚡', takdir: '🍀' };
 	const UTIL_ICON = { PLN: '💡', PDAM: '🚰' };
 
@@ -50,7 +50,7 @@
 			{#if t.group}<span class="band" style:background={GROUPS[t.group].color}>
 					{#if own?.level}<span class="lvl" title={HOUSE_LEVELS[own.level].name}>{HOUSE_LEVELS[own.level].icon}</span>{/if}
 				</span>{/if}
-			<span class="body">
+			<span class="body" class:photo={!!images[t.name]} style:--img={images[t.name] ? `url("${images[t.name].url}")` : null}>
 				{#if isCorner(t.i)}<span class="cicon">{CORNER_ICON[t.type]}</span>{/if}
 				{#if TYPE_ICON[t.type] || UTIL_ICON[t.name]}<span class="ticon">{TYPE_ICON[t.type] || UTIL_ICON[t.name]}</span>{/if}
 				<span class="name">{t.short ?? t.name}</span>
@@ -138,6 +138,17 @@
 		padding: 2px;
 		text-align: center;
 		min-width: 0;
+	}
+	.body.photo {
+		background:
+			linear-gradient(rgba(255, 253, 246, 0.5), rgba(255, 253, 246, 0.72)),
+			var(--img) center / cover no-repeat;
+	}
+	.body.photo .name,
+	.body.photo .price {
+		text-shadow:
+			0 0 3px #fff,
+			0 0 6px #fff;
 	}
 	.side-l .body,
 	.side-r .body {

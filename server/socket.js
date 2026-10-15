@@ -13,6 +13,7 @@ import {
 	GameError
 } from './game/engine.js';
 import { TOKENS } from '../src/lib/shared/board.js';
+import { refreshCityImages } from './cityImages.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CHAT_LIMIT = 60;
@@ -35,6 +36,11 @@ function genCode() {
 function getRoom(code) {
 	if (rooms.has(code)) return rooms.get(code);
 	const state = loadRoom(code);
+	if (state && 'arisan' in state) {
+		// migrasi room lama: Kas Arisan -> Kas Negara
+		state.kasNegara = state.arisan;
+		delete state.arisan;
+	}
 	if (state) rooms.set(code, state);
 	return state;
 }
@@ -58,6 +64,7 @@ function errMsg(e) {
 /** @param {import('node:http').Server} httpServer */
 export function attachSocket(httpServer) {
 	const io = new Server(httpServer, { path: '/socket.io' });
+	refreshCityImages();
 
 	io.use((socket, next) => {
 		const cookies = parseCookie(socket.handshake.headers.cookie ?? '');

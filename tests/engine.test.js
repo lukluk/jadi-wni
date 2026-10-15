@@ -124,3 +124,32 @@ test('bangun harus merata', () => {
 	assert.throws(() => applyAction(s, owner, { type: 'build', tile: 1 }), /merata/);
 	assert.equal(s.players[0].money, START_MONEY - 50);
 });
+
+test('sewa aset pemilik yang di Ruang Sidang masuk Kas Negara', () => {
+	const s = newGame(2, seeded(5));
+	const [owner, visitor] = s.players;
+	s.tiles[39] = { owner: owner.id, level: 0, mortgaged: false };
+	owner.inJail = true;
+	owner.pos = 10;
+	// paksa visitor giliran & mendarat di SCBD (39) dengan dadu 1+2
+	s.turn = 1;
+	visitor.pos = 36;
+	const before = { o: owner.money, v: visitor.money, k: s.kasNegara };
+	const dice = [0, 1 / 6]; // -> 1 dan 2
+	let n = 0;
+	applyAction(s, visitor.id, { type: 'roll' }, () => dice[n++ % 2]);
+	assert.equal(visitor.pos, 39);
+	assert.equal(owner.money, before.o);
+	assert.equal(visitor.money, before.v - 50);
+	assert.equal(s.kasNegara, before.k + 50);
+});
+
+test('bayar denda langsung bebas, denda masuk Kas Negara', () => {
+	const s = newGame(2, seeded(6));
+	const p = s.players[0];
+	p.inJail = true;
+	applyAction(s, p.id, { type: 'payJail' });
+	assert.equal(p.inJail, false);
+	assert.equal(s.kasNegara, 50);
+	assert.equal(s.phase, 'roll');
+});

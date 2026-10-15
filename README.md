@@ -51,10 +51,23 @@ Semua aturan dijalankan di server; client hanya mengirim intent (`roll`, `buy`, 
 - Properti: 22 kota (Cikarang → SCBD), 4 stasiun (KRL, Transjakarta, MRT, Whoosh), PLN & PDAM.
 - Level rumah: **Rumah Subsidi → Tipe 45 → Cluster → Rumah OKB**. Wajib kuasai satu grup warna, bangun merata.
 - **Musibah** (banjir, copet KRL, tilang ganjil-genap, kondangan…) & **Takdir** (THR, lolos CPNS, viral, Pemutihan…), masing-masing 16 kartu.
-- Pajak & denda masuk **Kas Arisan**; mendarat di *Menang Arisan* ambil semuanya.
+- Pajak, denda, dan Musibah masuk **Kas Negara** (di tengah papan); mendarat di *Bansos Cair* ambil semuanya.
+- Selama pemilik di Ruang Sidang, sewa asetnya **disita ke Kas Negara**, bukan ke pemilik.
 - *Kena Razia* / dobel 3× → **Ruang Sidang Tilang**: bayar denda Rp 50 jt, pakai kartu Pemutihan, atau coba dobel (maks 3 giliran).
 - Gadai ke Pegadaian 50%, tebus 55%. Saldo minus wajib dilunasi sebelum lanjut, atau bangkrut (aset disita bank).
 - Host bisa mengakhiri game; pemenang = kekayaan bersih terbesar. Pemain offline bisa dilewati gilirannya oleh pemain lain.
+
+## Foto kota
+
+Tiap kota memakai foto utama artikel Wikipedia-nya (hanya gambar berlisensi bebas dari Wikimedia Commons). Server mengambilnya saat start, menyimpan ke SQLite, dan memperbarui tiap 30 hari. Kredit pembuat + lisensi tampil di detail petak.
+
+Ganti foto tertentu lewat `server/city-images.overrides.json`:
+
+```json
+{ "SCBD": { "url": "https://…/scbd.jpg", "credit": "Nama fotografer", "license": "CC BY 4.0", "page": "https://…" } }
+```
+
+Kalau server tidak bisa mengakses Wikipedia, papan tetap jalan dengan warna grup saja.
 
 ## Batasan saat ini
 

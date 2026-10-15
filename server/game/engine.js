@@ -59,7 +59,7 @@ export function createGame(code, host) {
 		doubles: 0,
 		extraRoll: false,
 		pendingBuy: null,
-		arisan: 0,
+		kasNegara: 0,
 		decks: { musibah: [], takdir: [] },
 		lastCard: null,
 		seq: 0,
@@ -120,7 +120,7 @@ export function startGame(state, rng = Math.random) {
 
 // ---------- uang ----------
 
-/** bayar ke pemain lain (toId) atau ke Kas Arisan (toId = null) */
+/** bayar ke pemain lain (toId) atau ke Kas Negara (toId = null) */
 function pay(state, p, amount, toId = null) {
 	if (amount <= 0) return;
 	p.money -= amount;
@@ -128,7 +128,7 @@ function pay(state, p, amount, toId = null) {
 		const to = playerById(state, toId);
 		to.money += amount;
 	} else {
-		state.arisan += amount;
+		state.kasNegara += amount;
 	}
 }
 
@@ -208,25 +208,30 @@ function landOn(state, p, rng, { rentMult = 1 } = {}) {
 			}
 			const rent = rentFor(state, tile.i, diceTotal) * rentMult;
 			const owner = playerById(state, own.owner);
+			if (owner.inJail) {
+				pay(state, p, rent);
+				log(state, `${owner.name} sedang di Ruang Sidang — sewa ${tile.name} ${formatRp(rent)} dari ${p.name} disita ke Kas Negara.`);
+				return;
+			}
 			pay(state, p, rent, owner.id);
 			log(state, `${p.name} bayar sewa ${formatRp(rent)} ke ${owner.name} di ${tile.name}.`);
 			return;
 		}
 		case 'tax':
 			pay(state, p, tile.amount);
-			log(state, `${p.name} bayar ${tile.name} ${formatRp(tile.amount)} (masuk Kas Arisan).`);
+			log(state, `${p.name} bayar ${tile.name} ${formatRp(tile.amount)} (masuk Kas Negara).`);
 			return;
 		case 'musibah':
 		case 'takdir':
 			drawCard(state, p, tile.type, rng);
 			return;
-		case 'arisan':
-			if (state.arisan > 0) {
-				log(state, `${p.name} menang arisan! Ambil ${formatRp(state.arisan)} 🎉`);
-				p.money += state.arisan;
-				state.arisan = 0;
+		case 'bansos':
+			if (state.kasNegara > 0) {
+				log(state, `${p.name} dapat bansos! Ambil seluruh Kas Negara ${formatRp(state.kasNegara)} 🏛️`);
+				p.money += state.kasNegara;
+				state.kasNegara = 0;
 			} else {
-				log(state, `${p.name} menang arisan... tapi kasnya kosong.`);
+				log(state, `${p.name} antre bansos... tapi Kas Negara kosong.`);
 			}
 			return;
 		case 'gotojail':
@@ -509,7 +514,7 @@ export function applyAction(state, userId, action, rng = Math.random) {
 			pay(state, p, JAIL_FINE);
 			p.inJail = false;
 			p.jailTurns = 0;
-			log(state, `${p.name} bayar denda tilang ${formatRp(JAIL_FINE)}, bebas.`);
+			log(state, `${p.name} bayar denda tilang ${formatRp(JAIL_FINE)} ke Kas Negara, langsung bebas.`);
 			return;
 		}
 

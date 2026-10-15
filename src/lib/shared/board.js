@@ -30,7 +30,7 @@ export const GROUPS = {
 };
 
 /**
- * @typedef {{ i:number, type:'start'|'property'|'station'|'utility'|'tax'|'musibah'|'takdir'|'jail'|'arisan'|'gotojail',
+ * @typedef {{ i:number, type:'start'|'property'|'station'|'utility'|'tax'|'musibah'|'takdir'|'jail'|'bansos'|'gotojail',
  *   name:string, short?:string, group?:string, price?:number, rent?:number[], amount?:number, desc?:string }} Tile
  */
 
@@ -59,7 +59,7 @@ export const TILES = [
 	{ type: 'takdir', name: 'Takdir' },
 	p('Surabaya', 'oranye', 180, [14, 70, 200, 550, 950]),
 	p('Bandung', 'oranye', 200, [16, 80, 220, 600, 1000]),
-	{ type: 'arisan', name: 'Menang Arisan', short: 'Arisan', desc: 'Ambil semua uang di Kas Arisan' },
+	{ type: 'bansos', name: 'Bansos Cair', short: 'Bansos', desc: 'Ambil semua uang di Kas Negara' },
 	p('Medan', 'merah', 220, [18, 90, 250, 700, 1050]),
 	{ type: 'musibah', name: 'Musibah' },
 	p('Makassar', 'merah', 220, [18, 90, 250, 700, 1050]),
@@ -88,7 +88,7 @@ export const isOwnable = (t) => t.type === 'property' || t.type === 'station' ||
 
 /**
  * Kartu. Efek:
- *  money(n)          +/- uang (negatif masuk Kas Arisan)
+ *  money(n)          +/- uang (negatif masuk Kas Negara)
  *  moveTo(i)         maju ke petak i (lewat GAJIAN = terima gaji)
  *  back(n)           mundur n langkah
  *  jail              langsung ke Ruang Sidang
@@ -132,7 +132,7 @@ export const CARDS = {
 		{ text: 'Bonus akhir tahun keluar. Terima Rp 100 jt.', fx: { money: 100 } },
 		{ text: 'Nemu duit di saku jaket lama. Terima Rp 25 jt.', fx: { money: 25 } },
 		{ text: 'Naik transportasi umum: maju ke stasiun terdekat. Kalau sudah ada pemilik, bayar sewa 2x.', fx: { nearestStation: true } },
-		{ text: 'Ditunjuk jadi bendahara arisan. Maju ke Menang Arisan.', fx: { moveTo: 20 } }
+		{ text: 'Namamu masuk daftar penerima bantuan. Maju ke Bansos Cair.', fx: { moveTo: 20 } }
 	]
 };
 
