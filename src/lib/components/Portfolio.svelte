@@ -70,6 +70,12 @@
 	$effect(() => {
 		if (showBuy) dialog?.showModal();
 	});
+
+	let showSogok = $state(false);
+	let sogokDialog = $state();
+	$effect(() => {
+		if (showSogok) sogokDialog?.showModal();
+	});
 </script>
 
 {#snippet quote(b)}
@@ -162,33 +168,9 @@
 		{/if}
 
 		{#if playing}
-			<section class="sogok">
-				<h4>🕴️ Sogok Aparat</h4>
-				<p class="note">
-					Saldo ≥ {formatRp(SOGOK_MIN_MONEY)} → paksa pemilik jual asetnya di harga asli (petak + bangunan) ditambah uang sogok {formatRp(sogokFee())} ke Kas Negara.
-					Risiko {Math.round(SOGOK_RISK * 100)}% ketahuan KPK: sogok hangus & masuk Ruang Sidang. Sekali per giliran, saat gilirmu.
-				</p>
-				{#if !sogokOpen}
-					<p class="note"><b>🔒 Terkunci</b> — saldomu {formatRp(me.money)}, butuh {formatRp(SOGOK_MIN_MONEY)}.</p>
-				{/if}
-				{#each targets as t (t.tile.i)}
-					<div class="target">
-						<span class="tn">
-							{#if t.tile.group}<i class="band" style:background={GROUPS[t.tile.group].color}></i>{/if}
-							{t.tile.name} <small>· {t.owner?.name}</small>
-						</span>
-						<button
-							class="btn small danger-btn"
-							disabled={!sogokReady || me.money < t.price + t.fee}
-							onclick={() => onAction({ type: 'sogokPaksa', tile: t.tile.i })}
-						>
-							{formatRp(t.price + t.fee)}
-						</button>
-					</div>
-				{:else}
-					<p class="empty">Belum ada aset milik pemain lain.</p>
-				{/each}
-			</section>
+			<button class="btn sogok-btn" onclick={() => (showSogok = true)}>
+				🕴️ Sogok Aparat{#if !sogokOpen} <small>🔒 butuh {formatRp(SOGOK_MIN_MONEY)}</small>{/if}
+			</button>
 		{/if}
 
 		<section>
@@ -269,6 +251,42 @@
 				</article>
 			{/each}
 			<button class="close" onclick={() => dialog.close()} aria-label="Tutup">✕</button>
+		</div>
+	</dialog>
+{/if}
+
+{#if showSogok && me}
+	<dialog bind:this={sogokDialog} onclose={() => (showSogok = false)} onclick={(e) => e.target === sogokDialog && sogokDialog.close()}>
+		<div class="sheet">
+			<h3>🕴️ Sogok Aparat</h3>
+			<p class="note">
+				Saldo ≥ {formatRp(SOGOK_MIN_MONEY)} → paksa pemilik jual asetnya di harga asli (petak + bangunan) ditambah uang sogok {formatRp(sogokFee())} ke Kas Negara.
+				Risiko {Math.round(SOGOK_RISK * 100)}% ketahuan KPK: sogok hangus &amp; masuk Ruang Sidang. Sekali per giliran, saat gilirmu.
+			</p>
+			{#if !sogokOpen}
+				<p class="note"><b>🔒 Terkunci</b> — saldomu {formatRp(me.money)}, butuh {formatRp(SOGOK_MIN_MONEY)}.</p>
+			{/if}
+			{#each targets as t (t.tile.i)}
+				<div class="target">
+					<span class="tn">
+						{#if t.tile.group}<i class="band" style:background={GROUPS[t.tile.group].color}></i>{/if}
+						{t.tile.name} <small>· {t.owner?.name}</small>
+					</span>
+					<button
+						class="btn small danger-btn"
+						disabled={!sogokReady || me.money < t.price + t.fee}
+						onclick={() => {
+							onAction({ type: 'sogokPaksa', tile: t.tile.i });
+							sogokDialog.close();
+						}}
+					>
+						{formatRp(t.price + t.fee)}
+					</button>
+				</div>
+			{:else}
+				<p class="empty">Belum ada aset milik pemain lain.</p>
+			{/each}
+			<button class="close" onclick={() => sogokDialog.close()} aria-label="Tutup">✕</button>
 		</div>
 	</dialog>
 {/if}
@@ -396,11 +414,13 @@
 		padding: 0.5rem 0.6rem;
 		background: #fff3f0;
 	}
-	.sogok {
+	.sogok-btn {
+		background: #f3f0ff;
 		border: 2px dashed var(--ink);
 		border-radius: 10px;
 		padding: 0.5rem 0.6rem;
-		background: #f3f0ff;
+		font-weight: 800;
+		cursor: pointer;
 	}
 	.target {
 		display: flex;

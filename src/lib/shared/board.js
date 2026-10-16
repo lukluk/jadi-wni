@@ -233,7 +233,7 @@ export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
 
 /** Sogok aparat: pemain berduit >= Rp 2 M bisa memaksa pemilik menjual asetnya */
 export const SOGOK_MIN_MONEY = 2000;
-export const SOGOK_FEE = 500; // uang sogok ke aparat (Kas Negara), tetap Rp 500 jt, di luar harga aset
+export const SOGOK_FEE = 1000; // uang sogok ke aparat (Kas Negara), tetap Rp 1 M, di luar harga aset
 export const SOGOK_RISK = 0.2; // peluang ketahuan KPK
 
 /** harga asli aset (petak + bangunan) yang dibayar ke pemilik saat dipaksa jual, belum termasuk uang sogok */

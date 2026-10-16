@@ -413,7 +413,7 @@ test('sogok aparat: saldo >= 2 M paksa beli aset; ketahuan KPK masuk penjara', (
 	assert.throws(() => applyAction(s, cur.id, { type: 'sogokPaksa', tile: 1 }, () => 0.9), GameError); // saldo < 2 M
 	cur.money = 3000;
 	const price = TILES[1].price;
-	const fee = 500;
+	const fee = 1000;
 	const before = other.money;
 	const kas = s.kasNegara;
 	applyAction(s, cur.id, { type: 'sogokPaksa', tile: 1 }, () => 0.9);
@@ -423,6 +423,7 @@ test('sogok aparat: saldo >= 2 M paksa beli aset; ketahuan KPK masuk penjara', (
 	assert.equal(s.kasNegara, kas + fee);
 	assert.throws(() => applyAction(s, cur.id, { type: 'sogokPaksa', tile: 3 }, () => 0.9), GameError); // sekali per giliran
 	s.turnCount += 1;
+	cur.money = 3000;
 	s.tiles[3] = { owner: other.id, level: 0, mortgaged: false };
 	applyAction(s, cur.id, { type: 'sogokPaksa', tile: 3 }, () => 0.1); // ketahuan
 	assert.equal(s.tiles[3].owner, other.id);
