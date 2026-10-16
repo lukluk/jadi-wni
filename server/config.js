@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs';
 
 // Muat .env sekali untuk kode server murni (socket, db). SvelteKit memuat .env sendiri.
-if (existsSync('.env') && !process.env.__JADI_WNI_ENV) {
-	try {
-		process.loadEnvFile('.env');
-	} catch {
-		/* abaikan */
+if (!process.env.__JADI_WNI_ENV) {
+	for (const f of ['.env', 'deploy/.env']) {
+		if (!existsSync(f)) continue;
+		try {
+			process.loadEnvFile(f);
+		} catch {
+			/* abaikan */
+		}
 	}
 	process.env.__JADI_WNI_ENV = '1';
 }

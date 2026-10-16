@@ -63,9 +63,9 @@ Semua aturan dijalankan di server; client hanya mengirim intent (`roll`, `buy`, 
 - Properti: 22 kota (Cikarang → SCBD), 4 stasiun (KRL, Transjakarta, MRT, Whoosh), PLN & PDAM.
 - **Pasar**: pemilik menjual aset lewat popup detail petak (isi harga, bisa diubah/ditarik); di tab **Pasar** pembeli klik Beli atau Nego (kirim tawaran), penjual terima/tolak. Aset digadai atau satu grup dengan rumah tidak bisa dijual.
 - Tab **Portofolio**: daftar semua asetmu + saham plesetan (BACA, BIBR, ASIK, GATO) yang harganya naik-turun tiap giliran. Beli saham memotong saldo; uang kembali hanya kalau kamu Jual. Nilai saham ikut dihitung di kekayaan bersih.
-- Level rumah: **Rumah Subsidi → Tipe 45 → Cluster → Rumah OKB → Kebun Sawit 🌴**. Wajib kuasai satu grup warna, bangun merata. Kebun Sawit level tertinggi: biaya bangun 3× lipat, sewa 1,5× Rumah OKB, dan tiap kebun menambah gaji GAJIAN +30 jt.
+- Level rumah: **Rumah Subsidi → Tipe 45 → Cluster → Rumah OKB → Kebun Sawit 🌴**. Wajib kuasai satu grup warna, bangun merata. Kebun Sawit level tertinggi dan hanya bisa ditanam di daerah penghasil sawit (**Medan, Balikpapan, Makassar, Raja Ampat**); kota lain mentok di Rumah OKB. Biaya bangun 3× lipat, sewa 1,5× Rumah OKB, dan tiap kebun menambah gaji GAJIAN +30 jt. **Risiko:** kartu Musibah "Karhutla" membakar SEMUA Kebun Sawit (milik siapa pun): turun jadi Rumah OKB dan pemilik kena denda sebesar biaya bangun sawit (3× biaya bangun).
 - **Musibah** (banjir, copet KRL, tilang ganjil-genap, kondangan…) & **Takdir** (THR, lolos CPNS, viral, Pemutihan…), masing-masing 16 kartu.
-- **Sewa tidak otomatis**: mendarat di aset pemain lain memunculkan popup tagihan (nama aset, pemilik, tarif, level) dengan tombol **Bayar**; tidak ada tombol lewati. Kalau uang kurang, jual rumah / gadai / jual aset / jual saham dulu, atau **Menyerah**: semua aset sisa jadi milik pemilik yang menagih. Waktu menyelesaikan tagihan **2 menit** (dihitung server); habis = otomatis menyerah.
+- **Sewa tidak otomatis**: mendarat di aset pemain lain memunculkan popup tagihan (nama aset, pemilik, tarif, level) dengan tombol **Bayar**; tidak ada tombol lewati. Kalau uang kurang, jual rumah / gadai / jual aset / jual saham dulu, atau **Menyerah**: semua aset dijual otomatis (properti harga beli, bangunan separuh biaya, saham harga sekarang) untuk menutup tagihan. Sisa di atas 0 = lanjut main tanpa aset; sisa 0 atau kurang = bangkrut dan aset sisa jadi milik penagih. Tombol Menyerah menampilkan perkiraannya dulu. Waktu menyelesaikan tagihan **2 menit** (dihitung server); habis = otomatis menyerah.
 - Pajak, denda, dan Musibah masuk **Kas Negara** (di tengah papan); mendarat di *Bansos Cair* ambil semuanya.
 - Selama pemilik di Ruang Sidang, sewa asetnya **disita ke Kas Negara**, bukan ke pemilik.
 - *Kena Razia* / dobel 3× → **Ruang Sidang Tilang**: bayar denda Rp 50 jt, pakai kartu Pemutihan, atau coba dobel (maks 3 giliran).
@@ -102,7 +102,7 @@ Kalau server tidak bisa mengakses Wikipedia, papan tetap jalan dengan warna grup
 - Belum ada trading antar pemain dan lelang properti yang dilewati.
 - Satu instance. Untuk scale-out butuh `@socket.io/redis-adapter`, sticky session, dan state room dipindah ke Redis/DB bersama.
 - Chat tidak dipersist; state game dipersist ke SQLite tiap aksi (aman saat restart).
-- Bangkrut biasa: aset kembali ke bank. Menyerah saat ditagih sewa: aset ke penagih.
+- Bangkrut biasa: aset kembali ke bank. Menyerah saat ditagih: aset dijual otomatis, lanjut kalau sisa > 0, selain itu bangkrut (aset ke penagih).
 
 ## Tes
 

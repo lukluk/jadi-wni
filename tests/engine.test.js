@@ -10,7 +10,7 @@ import {
 	expireRent,
 	expireKick
 } from '../server/game/engine.js';
-import { TILES, MAX_LEVEL, START_MONEY, STOCKS } from '../src/lib/shared/board.js';
+import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, surrenderPlan, START_MONEY, STOCKS } from '../src/lib/shared/board.js';
 
 function seeded(seed) {
 	return () => {
@@ -88,7 +88,7 @@ test('ratusan game acak berjalan tanpa error dan state konsisten', () => {
 				if (t.mortgaged) assert.equal(t.level, 0);
 				assert.ok(['property', 'station', 'utility'].includes(TILES[+i].type));
 			}
-			assert.equal(s.decks.musibah.length, 16);
+			assert.equal(s.decks.musibah.length, CARDS.musibah.length);
 		}
 		if (s.status === 'ended') finished++;
 	}
@@ -109,13 +109,54 @@ test('sewa dobel saat kuasai grup, dan sewa Rumah OKB', () => {
 	s.tiles[3] = { owner, level: 0, mortgaged: false };
 	assert.equal(rentFor(s, 1), 4);
 	s.players[0].money = 10000;
-	for (let i = 0; i < MAX_LEVEL; i++) {
+	for (let i = 0; i < OKB_LEVEL; i++) {
 		applyAction(s, owner, { type: 'build', tile: 1 });
 		applyAction(s, owner, { type: 'build', tile: 3 });
 	}
-	assert.equal(s.tiles[1].level, MAX_LEVEL);
-	assert.equal(rentFor(s, 1), 375); // Kebun Sawit = 1,5x Rumah OKB (250)
-	assert.throws(() => applyAction(s, owner, { type: 'build', tile: 1 }), /Sawit/);
+	assert.equal(s.tiles[1].level, OKB_LEVEL);
+	assert.equal(rentFor(s, 1), TILES[1].rent[OKB_LEVEL]);
+	assert.throws(() => applyAction(s, owner, { type: 'build', tile: 1 }), /Sawit hanya di/);
+});
+
+test('Kebun Sawit hanya di daerah sawit (Medan, Makassar, Balikpapan)', () => {
+	const s = newGame(2, seeded(3));
+	const owner = s.players[0].id;
+	const idx = ['Medan', 'Makassar', 'Balikpapan'].map((n) => TILES.findIndex((t) => t.name === n));
+	for (const i of idx) s.tiles[i] = { owner, level: 0, mortgaged: false };
+	s.players[0].money = 100000;
+	for (let i = 0; i < MAX_LEVEL; i++) for (const t of idx) applyAction(s, owner, { type: 'build', tile: t });
+	for (const t of idx) assert.equal(s.tiles[t].level, MAX_LEVEL);
+	assert.throws(() => applyAction(s, owner, { type: 'build', tile: idx[0] }), /Sawit, mentok/);
+});
+
+test('kota non-sawit tidak menghalangi bangun merata di grup', () => {
+	const s = newGame(2, seeded(3));
+	const owner = s.players[0].id;
+	const idx = ['Denpasar', 'Labuan Bajo', 'Raja Ampat'].map((n) => TILES.findIndex((t) => t.name === n));
+	for (const i of idx) s.tiles[i] = { owner, level: 0, mortgaged: false };
+	s.players[0].money = 100000;
+	for (let i = 0; i < OKB_LEVEL; i++) for (const t of idx) applyAction(s, owner, { type: 'build', tile: t });
+	applyAction(s, owner, { type: 'build', tile: idx[2] }); // Raja Ampat -> Sawit
+	assert.equal(s.tiles[idx[2]].level, MAX_LEVEL);
+	assert.throws(() => applyAction(s, owner, { type: 'build', tile: idx[0] }), /Sawit hanya di/);
+});
+
+test('Karhutla: semua Kebun Sawit hangus + denda', () => {
+	const s = newGame(2, seeded(3));
+	const [a, b] = s.players;
+	const idx = ['Medan', 'Makassar', 'Balikpapan'].map((n) => TILES.findIndex((t) => t.name === n));
+	for (const i of idx) s.tiles[i] = { owner: a.id, level: MAX_LEVEL, mortgaged: false };
+	s.tiles[idx[0]].owner = b.id; // satu kebun milik pemain lain ikut terbakar
+	const fine = 150 * 3;
+	a.money = b.money = 5000;
+	s.decks.musibah = [CARDS.musibah.findIndex((c) => c.fx.karhutla)];
+	a.pos = 14; // + dadu 4+4 = 22 (Musibah)
+	const kas = s.kasNegara;
+	applyAction(s, a.id, { type: 'roll' }, () => 0.5);
+	for (const i of idx) assert.equal(s.tiles[i].level, OKB_LEVEL);
+	assert.equal(a.money, 5000 - fine * 2);
+	assert.equal(b.money, 5000 - fine);
+	assert.equal(s.kasNegara, kas + fine * 3);
 });
 
 test('bangun harus merata', () => {
@@ -260,7 +301,60 @@ test('saham: harga tetap dalam batas setelah banyak giliran, netWorth menghitung
 	}
 });
 
-test('sewa harus dibayar manual; uang kurang tidak bisa bayar; menyerah -> aset ke penagih', () => {
+function rentSetup(visitorMoney) {
+	const s = newGame(2, seeded(11));
+	const [owner, visitor] = s.players;
+	s.tiles[39] = { owner: owner.id, level: 0, mortgaged: false };
+	s.tiles[37] = { owner: visitor.id, level: 0, mortgaged: false };
+	s.turn = 1;
+	visitor.pos = 36;
+	visitor.money = visitorMoney;
+	const dice = [0, 1 / 6];
+	let n = 0;
+	applyAction(s, visitor.id, { type: 'roll' }, () => dice[n++ % 2]);
+	assert.equal(s.phase, 'rent');
+	return { s, owner, visitor };
+}
+
+test('menyerah saat ditagih: aset dijual otomatis, sisa > 0 -> lanjut tanpa aset', () => {
+	const { s, owner, visitor } = rentSetup(10);
+	visitor.stocks = { [STOCKS[0].sym]: { qty: 2, cost: 0 } };
+	const rent = s.pendingRent.amount;
+	const plan = surrenderPlan(s, visitor);
+	const expectLeft = 10 + TILES[37].price + 2 * s.stocks[STOCKS[0].sym].price - rent;
+	assert.equal(plan.outcome, 'lanjut');
+	assert.equal(plan.left, expectLeft);
+	const ownerBefore = owner.money;
+	applyAction(s, visitor.id, { type: 'bankrupt' });
+	assert.equal(visitor.bankrupt, false);
+	assert.equal(s.status, 'playing');
+	assert.equal(s.tiles[37], undefined); // aset kembali ke bank
+	assert.deepEqual(visitor.stocks, {});
+	assert.equal(visitor.money, expectLeft);
+	assert.equal(owner.money, ownerBefore + rent);
+	assert.equal(s.pendingRent, null);
+	assert.notEqual(s.phase, 'rent');
+});
+
+test('menyerah saat ditagih: sisa <= 0 -> bangkrut, aset ke penagih', () => {
+	const { s, owner, visitor } = rentSetup(10);
+	s.pendingRent.amount = 100000;
+	assert.equal(surrenderPlan(s, visitor).outcome, 'bangkrut');
+	applyAction(s, visitor.id, { type: 'bankrupt' });
+	assert.equal(visitor.bankrupt, true);
+	assert.equal(s.tiles[37].owner, owner.id);
+	assert.equal(s.status, 'ended');
+});
+
+test('menyerah tanpa utang = keluar dari game (bangkrut)', () => {
+	const s = newGame(3, seeded(2));
+	const p = s.players[1];
+	assert.equal(surrenderPlan(s, p).outcome, 'keluar');
+	applyAction(s, p.id, { type: 'bankrupt' });
+	assert.equal(p.bankrupt, true);
+});
+
+test('sewa harus dibayar manual; uang kurang tidak bisa bayar', () => {
 	const s = newGame(2, seeded(11));
 	const [owner, visitor] = s.players;
 	s.tiles[39] = { owner: owner.id, level: 0, mortgaged: false };
@@ -274,12 +368,9 @@ test('sewa harus dibayar manual; uang kurang tidak bisa bayar; menyerah -> aset 
 	assert.equal(s.phase, 'rent');
 	assert.throws(() => applyAction(s, visitor.id, { type: 'payRent' }), GameError);
 	assert.throws(() => applyAction(s, owner.id, { type: 'payRent' }), GameError);
-	applyAction(s, visitor.id, { type: 'bankrupt' });
-	assert.equal(s.tiles[37].owner, owner.id);
-	assert.equal(s.status, 'ended');
 });
 
-test('tagihan sewa punya batas 2 menit; habis = menyerah, aset ke penagih', () => {
+test('tagihan sewa punya batas 2 menit; habis = menyerah (aset dijual otomatis)', () => {
 	const s = newGame(2, seeded(11));
 	const [owner, visitor] = s.players;
 	s.tiles[39] = { owner: owner.id, level: 0, mortgaged: false };
@@ -294,8 +385,9 @@ test('tagihan sewa punya batas 2 menit; habis = menyerah, aset ke penagih', () =
 	assert.ok(dl - Date.now() >= 119_000);
 	assert.equal(expireRent(s, dl - 1000), false);
 	assert.equal(expireRent(s, dl + 1), true);
-	assert.equal(s.tiles[37].owner, owner.id);
-	assert.equal(s.status, 'ended');
+	assert.equal(s.tiles[37], undefined); // sisa > 0: aset dijual, lanjut main
+	assert.equal(visitor.bankrupt, false);
+	assert.notEqual(s.phase, 'rent');
 });
 
 test('judol: hasil -100%..+100% dari taruhan, taruhan tidak boleh melebihi saldo', () => {
@@ -359,4 +451,16 @@ test('vote kick gagal kalau penolak terlalu banyak, atau habis waktu', () => {
 	assert.equal(expireKick(s2, Date.now() + 60_000), true);
 	assert.equal(s2.kickVote, null);
 	assert.throws(() => applyAction(newGame(2, seeded(1)), 'a', { type: 'kickStart', target: 'b' }), GameError);
+});
+
+test('richestId: raja = kekayaan bersih tertinggi, tidak ada kalau seri', () => {
+	const s = newGame(2, seeded(5));
+	assert.equal(richestId(s), null); // seri
+	s.players[1].money += 100;
+	assert.equal(richestId(s), s.players[1].id);
+	s.tiles[1] = { owner: s.players[0].id, level: 0, mortgaged: false }; // properti dihitung sebagai aset
+	s.players[0].money -= TILES[1].price - 200;
+	assert.equal(richestId(s), s.players[0].id);
+	s.players[0].bankrupt = true;
+	assert.equal(richestId(s), null);
 });

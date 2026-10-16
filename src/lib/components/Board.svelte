@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, formatRp } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, richestId } from '$lib/shared/board.js';
 	import Avatar from './Avatar.svelte';
 	import { play } from '$lib/sound.js';
 	import { tilePos, isCorner } from '$lib/layout.js';
@@ -88,6 +88,7 @@
 		for (const p of live) (byPos[at(p)] ??= []).push(p.id);
 		return live.map((p) => ({ p, at: at(p), k: byPos[at(p)].indexOf(p.id), n: byPos[at(p)].length }));
 	});
+	const kingId = $derived(richestId(game));
 	const currentId = $derived(game.status === 'playing' ? game.players[game.turn]?.id : null);
 </script>
 
@@ -144,6 +145,7 @@
 		<span class="token" class:active={p.id === currentId} class:hop={at !== p.pos} style={tokenStyle(p, at, k, n)} title={p.name}>
 			<Avatar {p} />
 		</span>
+		{#if p.id === kingId}<span class="crown" class:hop={at !== p.pos} style={tokenStyle(p, at, k, n)} aria-hidden="true">👑</span>{/if}
 	{/each}
 </div>
 
@@ -352,6 +354,18 @@
 			top 0.18s ease-in-out;
 		pointer-events: none;
 		z-index: 3;
+	}
+	.crown {
+		position: absolute;
+		transform: translate(-50%, -135%) rotate(-8deg);
+		font-size: clamp(9px, 2.8cqi, 20px);
+		line-height: 1;
+		pointer-events: none;
+		z-index: 5;
+		filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.5));
+		transition:
+			left 0.18s ease-in-out,
+			top 0.18s ease-in-out;
 	}
 	.token.hop {
 		animation: hop 0.19s ease-out;

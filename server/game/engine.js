@@ -11,8 +11,10 @@ import {
 	JAIL_INDEX,
 	MAX_PLAYERS,
 	MIN_PLAYERS,
-	MAX_LEVEL,
+	maxLevelOf,
+	canSawit,
 	OKB_LEVEL,
+	SAWIT_LEVEL,
 	STOCKS,
 	STOCK_HISTORY,
 	salaryFor,
@@ -22,8 +24,13 @@ import {
 	STATION_RENT,
 	UTILITY_MULT,
 	isOwnable,
-	formatRp
+	formatRp,
+	stockValue,
+	netWorth,
+	surrenderPlan
 } from '../../src/lib/shared/board.js';
+
+export { stockValue, netWorth };
 
 export class GameError extends Error {}
 
@@ -269,6 +276,23 @@ function landOn(state, p, rng, { rentMult = 1 } = {}) {
 
 const JAIL_FREE_CARD = CARDS.takdir.findIndex((c) => c.fx.jailFree);
 
+/** Karhutla: semua Kebun Sawit hangus -> Rumah OKB, pemilik kena denda sebesar biaya bangun sawit (ke Kas Negara) */
+function burnSawit(state) {
+	let burned = 0;
+	for (const [i, t] of Object.entries(state.tiles)) {
+		const tile = TILES[+i];
+		if (tile.type !== 'property' || t.level !== SAWIT_LEVEL) continue;
+		const owner = playerById(state, t.owner);
+		if (!owner || owner.bankrupt) continue;
+		const fine = buildCost(GROUPS[tile.group].houseCost, SAWIT_LEVEL);
+		t.level = OKB_LEVEL;
+		pay(state, owner, fine);
+		burned += 1;
+		log(state, `🔥 Kebun Sawit ${owner.name} di ${tile.name} hangus terbakar! Denda lingkungan ${formatRp(fine)}.`);
+	}
+	if (!burned) log(state, '🔥 Karhutla, tapi tidak ada Kebun Sawit yang terbakar. Untung!');
+}
+
 function drawCard(state, p, deck, rng) {
 	if (!state.decks[deck].length) {
 		// semua kartu (selain Pemutihan yang dipegang) dikocok ulang
@@ -308,6 +332,7 @@ function drawCard(state, p, deck, rng) {
 			log(state, `${p.name} belum punya rumah, lolos!`);
 		}
 	}
+	if (fx.karhutla) burnSawit(state);
 	if (fx.each) {
 		for (const other of alive(state)) {
 			if (other.id === p.id) continue;
@@ -417,16 +442,6 @@ function checkWinner(state) {
 	}
 }
 
-export function netWorth(state, p) {
-	let total = p.money + stockValue(state, p);
-	for (const [i, t] of Object.entries(state.tiles)) {
-		if (t.owner !== p.id) continue;
-		const tile = TILES[+i];
-		total += t.mortgaged ? tile.price / 2 : tile.price;
-		if (tile.type === 'property') total += investedCost(GROUPS[tile.group].houseCost, t.level);
-	}
-	return total;
-}
 
 /** waktu menyelesaikan tagihan; +grace untuk animasi dadu/bidak sebelum popup muncul */
 export const RENT_TIMEOUT_MS = 120_000;
@@ -438,7 +453,7 @@ export function expireRent(state, now = Date.now()) {
 	if (state.status !== 'playing' || state.phase !== 'rent' || !r?.deadline || now < r.deadline) return false;
 	const p = current(state);
 	log(state, `⏰ Waktu habis! ${p.name} tidak menyelesaikan tagihan dan dianggap menyerah.`);
-	goBankrupt(state, p);
+	surrender(state, p);
 	return true;
 }
 
@@ -521,6 +536,34 @@ function payRent(state, p) {
 	afterResolve(state);
 }
 
+/**
+ * Menyerah: kalau ada tagihan/utang, aset dijual otomatis (lihat surrenderPlan) untuk melunasinya.
+ * Sisa > 0 = lanjut main dengan uang sisa; sisa <= 0 (atau tanpa utang) = bangkrut seperti biasa.
+ */
+function surrender(state, p) {
+	const plan = surrenderPlan(state, p);
+	if (plan.outcome !== 'lanjut') return goBankrupt(state, p);
+	const proceeds = plan.properties + plan.buildings + plan.stocks;
+	cleanMarketFor(state, p.id);
+	for (const [i, t] of Object.entries(state.tiles)) if (t.owner === p.id) delete state.tiles[i];
+	p.stocks = {};
+	p.money += proceeds;
+	const creditor = plan.creditorId ? playerById(state, plan.creditorId) : null;
+	if (plan.rent > 0) {
+		const r = state.pendingRent;
+		state.pendingRent = null;
+		p.money -= plan.rent;
+		if (creditor && !creditor.inJail) creditor.money += plan.rent;
+		else state.kasNegara += plan.rent;
+		log(state, `${p.name} bayar sewa ${formatRp(plan.rent)} di ${TILES[r.tile].name}${creditor ? ` ke ${creditor.name}` : ''}.`);
+	}
+	log(
+		state,
+		`🏳️ ${p.name} menyerah: semua aset dijual otomatis (${formatRp(proceeds)}). Sisa saldo ${formatRp(p.money)}, lanjut main tanpa aset.`
+	);
+	if (state.phase === 'rent') afterResolve(state);
+}
+
 function goBankrupt(state, p) {
 	p.bankrupt = true;
 	const wasCurrent = current(state).id === p.id;
@@ -570,8 +613,11 @@ function build(state, userId, tileIdx) {
 	if (!ownsGroup(state, userId, tile.group)) fail(`Kuasai semua kota grup ${GROUPS[tile.group].label} dulu.`);
 	const group = groupTiles(tile.group).map((t) => state.tiles[t.i]);
 	if (group.some((t) => t.mortgaged)) fail('Ada kota di grup ini yang sedang digadai.');
-	if (own.level >= MAX_LEVEL) fail('Sudah Kebun Sawit, mentok!');
-	if (own.level > Math.min(...group.map((t) => t.level)))
+	if (own.level >= maxLevelOf(tile))
+		fail(canSawit(tile) ? 'Sudah Kebun Sawit, mentok!' : `Sudah ${HOUSE_LEVELS[own.level].name}, mentok! Kebun Sawit hanya di Sumatra, Kalimantan, Sulawesi & Papua.`);
+	// merata: abaikan kota yang sudah mentok di batas levelnya (mis. kota non-sawit di level OKB)
+	const open = groupTiles(tile.group).filter((t) => state.tiles[t.i].level < maxLevelOf(t));
+	if (open.some((t) => state.tiles[t.i].level < own.level))
 		fail('Bangun merata dulu di kota lain dalam grup ini.');
 	const cost = buildCost(GROUPS[tile.group].houseCost, own.level + 1);
 	if (p.money < cost) fail(`Uang kurang, butuh ${formatRp(cost)}.`);
@@ -630,11 +676,6 @@ function initStocks() {
 
 const stocksOf = (state) => (state.stocks ??= initStocks());
 
-export function stockValue(state, p) {
-	let total = 0;
-	for (const [sym, h] of Object.entries(p.stocks ?? {})) total += h.qty * (state.stocks?.[sym]?.price ?? 0);
-	return total;
-}
 
 /** random walk tiap giliran, ditarik pelan ke harga dasar */
 function tickStocks(state, rng = Math.random) {
@@ -1034,7 +1075,7 @@ export function applyAction(state, userId, action, rng = Math.random) {
 			if (state.status !== 'playing') fail('Game belum berjalan.');
 			const p = playerById(state, userId);
 			if (!p || p.bankrupt) fail('Kamu bukan pemain aktif.');
-			return goBankrupt(state, p);
+			return surrender(state, p);
 		}
 
 		case 'endGame': {

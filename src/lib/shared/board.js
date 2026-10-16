@@ -24,6 +24,12 @@ export const OKB_LEVEL = SAWIT_LEVEL - 1;
 export const SAWIT_COST_MULT = 3;
 export const SAWIT_SALARY_BONUS = 30;
 
+/** Kebun Sawit hanya cocok di daerah penghasil sawit (Sumatra, Kalimantan, Sulawesi, Papua) */
+export const SAWIT_CITIES = ['Medan', 'Balikpapan', 'Makassar', 'Raja Ampat'];
+export const canSawit = (tile) => SAWIT_CITIES.includes(tile.name);
+/** level tertinggi yang bisa dibangun di petak ini */
+export const maxLevelOf = (tile) => (canSawit(tile) ? MAX_LEVEL : OKB_LEVEL);
+
 /** biaya membangun ke level `level` (1..MAX_LEVEL) */
 export const buildCost = (houseCost, level) => (level >= SAWIT_LEVEL ? houseCost * SAWIT_COST_MULT : houseCost);
 /** total biaya yang sudah ditanam sampai `level` */
@@ -125,6 +131,7 @@ export const isOwnable = (t) => t.type === 'property' || t.type === 'station' ||
  *  jailFree          simpan kartu Pemutihan
  *  repairs(h, okb)   bayar per rumah (lv1-3) & per Rumah OKB
  *  each(n)           terima n dari tiap pemain (negatif = bayar ke tiap pemain)
+ *  karhutla          SEMUA Kebun Sawit (milik siapa pun) hangus: turun ke Rumah OKB + denda sebesar biaya bangun sawit
  *  nearestStation    maju ke stasiun terdekat, bayar sewa 2x
  */
 export const CARDS = {
@@ -144,7 +151,9 @@ export const CARDS = {
 		{ text: 'Anak masuk sekolah, ada uang gedung. Bayar Rp 150 jt.', fx: { money: -150 } },
 		{ text: 'Kartu BPJS ketinggalan, bayar rumah sakit mandiri. Rp 100 jt.', fx: { money: -100 } },
 		{ text: 'Tetangga pinjam uang "minggu depan dibalikin". Sudah 2 tahun. Rugi Rp 50 jt.', fx: { money: -50 } },
-		{ text: 'Mudik lebaran kena macet 20 jam di jalur pantura. Mundur 2 petak.', fx: { back: 2 } }
+		{ text: 'Mudik lebaran kena macet 20 jam di jalur pantura. Mundur 2 petak.', fx: { back: 2 } },
+		{ text: '🔥 Karhutla! Kemarau panjang, lahan sawit terbakar. Semua Kebun Sawit hangus jadi Rumah OKB dan pemiliknya kena denda lingkungan sebesar biaya bangun sawit.', fx: { karhutla: true } },
+		{ text: '🔥 Puntung rokok di lahan gambut, api menjalar ke kebun sawit! Semua Kebun Sawit hangus jadi Rumah OKB dan pemiliknya kena denda lingkungan sebesar biaya bangun sawit.', fx: { karhutla: true } }
 	],
 	takdir: [
 		{ text: 'THR cair! Terima Rp 100 jt.', fx: { money: 100 } },
@@ -223,3 +232,70 @@ export const JAIL_CARD = { name: 'Kartu Pemutihan', short: '🎫', type: 'card',
 export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
 
 export const formatRp = (n) => `${n < 0 ? '-' : ''}Rp ${formatAmt(n)}`;
+
+/** nilai saham yang dipegang pemain pada harga pasar sekarang */
+export function stockValue(state, p) {
+	let total = 0;
+	for (const [sym, h] of Object.entries(p.stocks ?? {})) total += h.qty * (state.stocks?.[sym]?.price ?? 0);
+	return total;
+}
+
+/** perkiraan total aset: uang + saham + properti (harga beli, separuh bila digadai) + modal bangunan */
+export function netWorth(state, p) {
+	let total = p.money + stockValue(state, p);
+	for (const [i, t] of Object.entries(state.tiles)) {
+		if (t.owner !== p.id) continue;
+		const tile = TILES[+i];
+		total += t.mortgaged ? tile.price / 2 : tile.price;
+		if (tile.type === 'property') total += investedCost(GROUPS[tile.group].houseCost, t.level);
+	}
+	return total;
+}
+
+/** id pemain "raja": kekayaan bersih tertinggi (tunggal, tidak seri) saat game berjalan */
+export function richestId(state) {
+	if (state.status !== 'playing') return null;
+	const ranked = state.players
+		.filter((p) => !p.bankrupt)
+		.map((p) => ({ id: p.id, w: netWorth(state, p) }))
+		.sort((a, b) => b.w - a.w);
+	return ranked.length > 1 && ranked[0].w > ranked[1].w ? ranked[0].id : null;
+}
+
+/**
+ * Perkiraan kalau pemain menyerah. Semua aset dijual otomatis: properti di harga beli (digadai: separuh),
+ * bangunan di harga jual (separuh biaya bangun), saham di harga sekarang. Hasilnya dipakai menutup tagihan:
+ *   sisa > 0  -> lanjut main hanya dengan uang sisa; sisa <= 0 -> bangkrut.
+ * Tanpa tagihan/utang sama sekali, menyerah = keluar dari game (bangkrut).
+ */
+export function surrenderPlan(state, p) {
+	let properties = 0;
+	let buildings = 0;
+	for (const [i, t] of Object.entries(state.tiles)) {
+		if (t.owner !== p.id) continue;
+		const tile = TILES[+i];
+		properties += t.mortgaged ? tile.price / 2 : tile.price;
+		if (tile.type === 'property') for (let l = 1; l <= t.level; l++) buildings += buildCost(GROUPS[tile.group].houseCost, l) / 2;
+	}
+	const stocks = stockValue(state, p);
+	// tagihan sewa yang sedang menunggu (hanya kalau penagihnya masih ada)
+	const r = state.pendingRent;
+	const own = r && state.tiles[r.tile];
+	const creditor =
+		state.phase === 'rent' && state.players[state.turn]?.id === p.id && own && !own.mortgaged
+			? state.players.find((x) => x.id === own.owner && !x.bankrupt && x.id !== p.id)
+			: null;
+	const rent = creditor ? r.amount : 0;
+	const hasDebt = rent > 0 || p.money < 0;
+	const left = p.money + properties + buildings + stocks - rent;
+	return {
+		money: p.money,
+		properties,
+		buildings,
+		stocks,
+		rent,
+		creditorId: creditor?.id ?? null,
+		left,
+		outcome: !hasDebt ? 'keluar' : left > 0 ? 'lanjut' : 'bangkrut'
+	};
+}

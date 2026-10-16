@@ -8,6 +8,7 @@
 	import PlayerCard from '$lib/components/PlayerCard.svelte';
 	import { play, isMuted, setMuted } from '$lib/sound.js';
 	import Voice from '$lib/components/Voice.svelte';
+	import Netizen from '$lib/components/Netizen.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Market from '$lib/components/Market.svelte';
 	import Portfolio from '$lib/components/Portfolio.svelte';
@@ -20,6 +21,8 @@
 		MIN_PLAYERS,
 		MAX_PLAYERS,
 		formatRp,
+		richestId,
+		surrenderPlan,
 		formatAmt,
 		salaryFor,
 		calendarDate
@@ -508,6 +511,32 @@
 		if (res.ok) location.href = `/room/${res.code}`;
 	}
 
+	/** menyerah: tampilkan perkiraan hasil penjualan otomatis aset sebelum konfirmasi */
+	function surrender() {
+		if (!myPlayer) return;
+		const pl = surrenderPlan(game, myPlayer);
+		const row = (label, v) => (v ? `${label}: ${formatRp(v)}\n` : '');
+		const head =
+			pl.outcome === 'keluar'
+				? 'Menyerah = keluar dari game. Semua asetmu disita bank.\n\n'
+				: 'Menyerah: semua asetmu dijual otomatis untuk menutup kekuranganmu.\n\n';
+		const est =
+			`Perkiraan:\n` +
+			row('• Saldo', pl.money) +
+			row('• Properti (harga beli)', pl.properties) +
+			row('• Bangunan (harga jual)', pl.buildings) +
+			row('• Saham (harga sekarang)', pl.stocks) +
+			row('• Tagihan sewa', -pl.rent) +
+			`= Sisa ${formatRp(pl.left)}\n\n`;
+		const tail =
+			pl.outcome === 'lanjut'
+				? 'Sisa di atas 0: kamu LANJUT main hanya dengan uang sisa (tanpa aset).'
+				: pl.outcome === 'bangkrut'
+					? 'Sisa 0 atau kurang: kamu BANGKRUT.' + (pl.creditorId ? ' Aset sisa jadi milik penagih.' : '')
+					: '';
+		confirmAct(head + (pl.outcome === 'keluar' ? '' : est) + tail + (pl.outcome === 'keluar' ? '' : '\n\nIni perkiraan; angka final dihitung server.') + '\n\nLanjut menyerah?', { type: 'bankrupt' });
+	}
+
 	function confirmAct(msg, a) {
 		if (confirm(msg)) act(a);
 	}
@@ -761,7 +790,7 @@
 			{#if game.status === 'playing'}
 				<div class="danger">
 					{#if myPlayer && !myPlayer.bankrupt}
-						<button class="btn small" onclick={() => confirmAct('Menyerah dan bangkrut? Semua asetmu disita bank.', { type: 'bankrupt' })}>Menyerah</button>
+						<button class="btn small" onclick={surrender}>Menyerah</button>
 					{/if}
 					{#if isHost}
 						<button class="btn small" onclick={() => confirmAct('Akhiri game sekarang? Pemenang = kekayaan bersih terbesar.', { type: 'endGame' })}>Akhiri game</button>
@@ -792,7 +821,7 @@
 		<button class="card-pop {card.deck}" onclick={() => (card = null)} aria-live="polite">
 			<span class="card-kind">{card.deck === 'musibah' ? '⚡ Musibah' : card.deck === 'tax' ? '🧾 Pajak' : '🍀 Takdir'}</span>
 			{#each game.players.filter((x) => x.id === card.playerId) as who (who.id)}
-				<span class="card-ava" title={who.name}><Avatar p={who} /></span>
+				<span class="card-ava" title={who.name}><Avatar p={who} />{#if richestId(game) === who.id}<span class="card-crown">👑</span>{/if}</span>
 			{/each}
 			<span class="card-who">{card.playerName}</span>
 			<span class="card-text">{card.text}{#if card.amount} <strong>-{formatAmt(card.amount)}</strong>{/if}</span>
@@ -840,7 +869,7 @@
 			<div class="rent-acts">
 				<button class="btn primary big" disabled={busy || ri.short > 0} onclick={() => act({ type: 'payRent' })}>Bayar {formatRp(ri.r.amount)}</button>
 				{#if ri.short > 0}
-					<button class="btn small" onclick={() => confirmAct(`Menyerah? Semua asetmu jadi milik ${ri.owner.name}.`, { type: 'bankrupt' })}>Menyerah</button>
+					<button class="btn small" onclick={surrender}>Menyerah</button>
 				{/if}
 			</div>
 		</div>
@@ -871,6 +900,7 @@
 {/if}
 
 {#if game && myPlayer && me}
+	<Netizen />
 	<Voice meId={me.id} players={game.players} bind:speaking bind:members={voiceMembers} />
 {/if}
 
@@ -1357,8 +1387,15 @@
 		border-radius: 50%;
 		border: 2px solid var(--ink);
 		background: #fff;
-		overflow: hidden;
 		font-size: 0.9rem;
+	}
+	.card-crown {
+		position: absolute;
+		top: -0.85rem;
+		left: 50%;
+		transform: translateX(-50%) rotate(-8deg);
+		font-size: 1.1rem;
+		line-height: 1;
 	}
 	.card-kind {
 		font-weight: 800;
@@ -1661,6 +1698,36 @@
 		}
 		.feed-body {
 			height: 200px;
+		}
+		/* ruang untuk tombol suara/netizen yang menempel di bawah layar */
+		.game {
+			padding-bottom: 4.5rem;
+		}
+	}
+	@media (max-width: 520px) {
+		.game {
+			padding: 0.35rem 0.35rem 4.5rem;
+			gap: 0.6rem;
+		}
+		.players {
+			padding: 0.9rem;
+		}
+		.card-pop {
+			aspect-ratio: auto;
+			min-height: 10rem;
+			padding: 0.9rem 1rem;
+			box-shadow: 5px 5px 0 var(--ink);
+		}
+		.rent-wrap {
+			padding: 0.5rem;
+		}
+		.rent-pop {
+			padding: 0.8rem;
+			max-height: calc(100dvh - 1rem);
+			overflow-y: auto;
+		}
+		.toast {
+			bottom: 4rem;
 		}
 	}
 </style>

@@ -16,6 +16,7 @@ import {
 } from './game/engine.js';
 import { TOKENS } from '../src/lib/shared/board.js';
 import { refreshCityImages } from './cityImages.js';
+import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CHAT_LIMIT = 60;
@@ -88,6 +89,9 @@ export function attachSocket(httpServer) {
 			}
 		}
 	}, 1000).unref?.();
+
+	// netizen AI: tiap 5 menit komentar kondisi pemain (butuh AI_API_KEY)
+	setInterval(() => tickNetizen(rooms, (code, feed) => io.to(code).emit('netizen:feed', feed)), 5000).unref?.();
 
 	io.use((socket, next) => {
 		const cookies = parseCookie(socket.handshake.headers.cookie ?? '');
@@ -174,6 +178,7 @@ export function attachSocket(httpServer) {
 			}
 			ack?.({ ok: true, spectator: !state.players.some((p) => p.id === user.id), me: user });
 			socket.emit('chat:history', chats.get(code) ?? []);
+			socket.emit('netizen:feed', netizenEnabled() ? (feedOf(code) ?? { posts: [], at: 0, nextAt: 0 }) : null);
 			broadcast(io, state);
 		});
 
@@ -275,6 +280,11 @@ export function attachSocket(httpServer) {
 			if (!io.sockets.adapter.rooms.get(voiceRoom(inVoice))?.has(to)) return;
 			io.to(to).emit('voice:signal', { from: socket.id, userId: user.id, data: msg.data });
 		});
+
+		// komponen Netizen baru mounting setelah join, jadi minta feed terkini sendiri
+		socket.on('netizen:query', (_p, ack) =>
+			ack?.(joined && netizenEnabled() ? (feedOf(joined) ?? { posts: [], at: 0, nextAt: 0 }) : null)
+		);
 
 		socket.on('voice:leave', leaveVoice);
 		socket.on('voice:query', (_p, ack) => ack?.({ members: joined ? voiceMembers(io, joined) : [] }));

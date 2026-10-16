@@ -11,6 +11,7 @@
 
 	let joined = $state(false);
 	let muted = $state(false);
+	let noMic = $state(false);
 	let busy = $state(false);
 	let error = $state('');
 	let camOn = $state(false);
@@ -81,6 +82,8 @@
 		pcs.set(sid, pc);
 		neg.set(sid, { making: false, ignore: false });
 		for (const t of local?.getTracks() ?? []) pc.addTrack(t, /** @type {MediaStream} */ (local));
+		// tanpa mikrofon: tetap bisa dengar (dan memicu negosiasi)
+		if (!local?.getAudioTracks().length) pc.addTransceiver('audio', { direction: 'recvonly' });
 		pc.onicecandidate = (e) => e.candidate && sock().emit('voice:signal', { to: sid, data: { candidate: e.candidate } });
 		pc.ontrack = (e) => {
 			const stream = e.streams[0];
@@ -151,9 +154,16 @@
 		busy = true;
 		try {
 			if (!navigator.mediaDevices?.getUserMedia) throw new Error('Browser tidak mendukung mikrofon (butuh HTTPS atau localhost).');
-			local = await navigator.mediaDevices.getUserMedia({
-				audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
-			});
+			try {
+				local = await navigator.mediaDevices.getUserMedia({
+					audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+				});
+			} catch (e) {
+				if (e?.name !== 'NotFoundError' && e?.name !== 'OverconstrainedError') throw e;
+				// tidak ada mikrofon: masuk sebagai pendengar
+				local = new MediaStream();
+				noMic = true;
+			}
 			const res = await new Promise((resolve) =>
 				sock()
 					.timeout(8000)
@@ -161,8 +171,8 @@
 			);
 			if (!res.ok) throw new Error(res.error);
 			joined = true;
-			muted = false;
-			addMeter('me', meId, local);
+			muted = noMic;
+			if (!noMic) addMeter('me', meId, local);
 			clearInterval(meterTimer);
 			meterTimer = setInterval(sampleMeters, 150);
 			for (const p of res.peers) makePeer(p.sid, p.userId);
@@ -176,6 +186,7 @@
 	function cleanup(notify = true) {
 		if (notify && joined) sock().emit('voice:leave');
 		joined = false;
+		noMic = false;
 		clearInterval(meterTimer);
 		for (const sid of [...pcs.keys()]) dropPeer(sid);
 		meters.clear();
@@ -189,6 +200,10 @@
 	}
 
 	function toggleMute() {
+		if (noMic) {
+			error = 'Mikrofon tidak ditemukan — kamu masuk sebagai pendengar.';
+			return;
+		}
 		muted = !muted;
 		for (const t of local?.getAudioTracks() ?? []) t.enabled = !muted;
 	}
@@ -258,7 +273,7 @@
 		</button>
 	{:else}
 		<button class="vbtn on" class:muted onclick={toggleMute} aria-pressed={muted} title={muted ? 'Mikrofon mati' : 'Mikrofon nyala'}>
-			{muted ? '🔇 Mic mati' : '🎙️ Mic nyala'}
+			{noMic ? '🔇 Tanpa mic' : muted ? '🔇 Mic mati' : '🎙️ Mic nyala'}
 		</button>
 		<button class="vbtn on" class:muted={!camOn} onclick={toggleCamera} aria-pressed={camOn} title="Kamera (opsional)">{camOn ? '📷 Kamera nyala' : '📷 Kamera'}</button>
 		<button class="vbtn" onclick={() => cleanup(true)} title="Keluar dari obrolan suara">Keluar suara</button>
@@ -335,13 +350,30 @@
 	.faces {
 		position: fixed;
 		left: 0.75rem;
-		bottom: 3.6rem;
+		bottom: 7rem;
 		z-index: 59;
 		display: flex;
 		gap: 0.4rem;
 		max-width: calc(100vw - 1.5rem);
 		overflow-x: auto;
 		pointer-events: none;
+	}
+	@media (max-width: 520px) {
+		.voice {
+			max-width: calc(100vw - 8.2rem);
+			gap: 0.3rem;
+		}
+		.vbtn {
+			height: 2.2rem;
+			padding: 0 0.55rem;
+			font-size: 0.72rem;
+		}
+		.faces {
+			bottom: 6.2rem; /* tombol suara bisa membungkus jadi 2 baris */
+		}
+		.face {
+			width: 5rem;
+		}
 	}
 	.faces.empty {
 		display: none;

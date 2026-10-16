@@ -71,7 +71,7 @@ spec:
             capabilities: { drop: ["ALL"] }
           resources:
             requests: { cpu: 100m, memory: 192Mi }
-            limits: { memory: 512Mi }
+            limits: { cpu: "4", memory: 8Gi }
           readinessProbe:
             httpGet: { path: /, port: http }
             initialDelaySeconds: 5
@@ -106,17 +106,15 @@ kind: Ingress
 metadata:
   name: jadi-wni
   namespace: __NAMESPACE__
+  labels:
+    app: jadi-wni
   annotations:
-    # WebSocket (Socket.IO) + sinyal WebRTC: koneksi panjang, jangan diputus proxy
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
-    nginx.ingress.kubernetes.io/proxy-body-size: "1m"
+    kubernetes.io/ingress.class: traefik
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
     __CERT_ANNOTATION__
 spec:
   ingressClassName: __INGRESS_CLASS__
-  tls:
-    - hosts: ["__HOST__"]
-      secretName: jadi-wni-tls
   rules:
     - host: __HOST__
       http:
@@ -127,4 +125,4 @@ spec:
               service:
                 name: jadi-wni
                 port:
-                  name: http
+                  number: 80

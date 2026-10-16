@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { TILES, formatRp, formatAmt } from '$lib/shared/board.js';
+	import { TILES, formatRp, formatAmt, netWorth, richestId } from '$lib/shared/board.js';
 	import Avatar from './Avatar.svelte';
 
 	/** @type {{ p:any, game:any, isTurn:boolean, isMe:boolean, online:boolean, isHost:boolean, speaking?:boolean, inVoice?:boolean, hold?:boolean, salary?:{id:string, amount:number, n:number}|null }} */
@@ -43,6 +43,7 @@
 		untrack(() => flash(salary.amount));
 	});
 
+	const king = $derived(richestId(game) === p.id);
 	const owned = $derived(Object.values(game.tiles).filter((t) => t.owner === p.id).length);
 	const status = $derived(
 		p.bankrupt
@@ -58,6 +59,7 @@
 <article class="ktp" data-pid={p.id} class:speaking class:turn={isTurn} class:bankrupt={p.bankrupt} style:--c={p.color}>
 	<div class="photo" aria-hidden="true">
 		<Avatar {p} />
+		{#if king}<span class="crown" title="Terkaya nomor 1" aria-label="Raja: terkaya nomor 1">👑</span>{/if}
 	</div>
 	<div class="info">
 		<div class="name">
@@ -76,6 +78,7 @@
 						<span class={f.up ? 'plus' : 'loss'} aria-hidden="true">{f.up ? '+' : '-'}{formatAmt(f.amt)}</span>
 					{/each}
 				</span>
+				<span class="worth" title="Perkiraan total aset: uang + saham + properti + bangunan">≈ {formatRp(netWorth(game, p))}</span>
 				<span class="props">{owned} aset{p.jailFree ? ` · ${p.jailFree} Pemutihan` : ''}</span>
 			</div>
 		{/if}
@@ -119,8 +122,17 @@
 		border-radius: 4px;
 		display: grid;
 		place-items: center;
-		overflow: hidden;
 		font-size: 1.8rem;
+	}
+	.crown {
+		position: absolute;
+		top: -1.05rem;
+		left: 50%;
+		transform: translateX(-50%) rotate(-8deg);
+		font-size: 1.35rem;
+		line-height: 1;
+		filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.5));
+		z-index: 2;
 	}
 	.info {
 		min-width: 0;
@@ -173,6 +185,14 @@
 	.money {
 		font-weight: 800;
 		font-size: 1.05rem;
+	}
+	.worth {
+		margin-right: auto;
+		padding-left: 0.4rem;
+		font-size: 0.72rem;
+		font-weight: 700;
+		color: var(--ink-soft);
+		white-space: nowrap;
 	}
 	.money.neg {
 		color: var(--merah);

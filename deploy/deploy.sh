@@ -10,13 +10,14 @@
 #   REGISTRY             default docker.io/luklukls (image: luklukls/jadi-wni:<tag>); jalankan `docker login` dulu
 #   GOOGLE_CLIENT_ID     } wajib saat pertama kali (disimpan di Secret; kalau kosong dan
 #   GOOGLE_CLIENT_SECRET } Secret sudah ada, Secret lama dipakai)
+#   AI_API_KEY           (opsional) aktifkan Netizen AI; ikut disimpan di Secret yang sama
 #   HOST                 default jadi-wni.pinuspintar.com
 #   NAMESPACE            default jadi-wni
 #   IMAGE_TAG            default: git short sha (atau timestamp)
 #   IMAGE                override nama image penuh (lewati build bila SKIP_BUILD=1)
 #   SKIP_BUILD=1         jangan build/push, pakai IMAGE yang sudah ada
 #   KUBE_CONTEXT         context kubectl (default: context aktif)
-#   INGRESS_CLASS        default nginx
+#   INGRESS_CLASS        default traefik
 #   CLUSTER_ISSUER       cert-manager ClusterIssuer (default letsencrypt-prod; kosongkan "-" bila TLS dikelola lain)
 #   STORAGE_CLASS        StorageClass PVC (default: bawaan cluster)
 #   DRY_RUN=1            hanya cetak manifest, tidak menerapkan
@@ -24,11 +25,14 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-REGISTRY="${REGISTRY:-docker.io/luklukls}"
+# deploy/.env (di-gitignore) berisi rahasia: GOOGLE_*, AI_*; env yang sudah di-set tetap menang
+if [ -f deploy/.env ]; then set -a; . deploy/.env; set +a; fi
+
+REGISTRY="${REGISTRY:-docker.io/lukluk}"
 HOST="${HOST:-jadi-wni.pinuspintar.com}"
 NAMESPACE="${NAMESPACE:-jadi-wni}"
-INGRESS_CLASS="${INGRESS_CLASS:-nginx}"
-CLUSTER_ISSUER="${CLUSTER_ISSUER:-letsencrypt-prod}"
+INGRESS_CLASS="${INGRESS_CLASS:-traefik}"
+CLUSTER_ISSUER="${CLUSTER_ISSUER:--}"
 IMAGE_TAG="${IMAGE_TAG:-$(git rev-parse --short HEAD 2>/dev/null || date +%Y%m%d%H%M%S)}"
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' tidak ditemukan di PATH." >&2; exit 1; }; }
@@ -81,6 +85,9 @@ if [ -n "${GOOGLE_CLIENT_ID:-}" ] && [ -n "${GOOGLE_CLIENT_SECRET:-}" ]; then
   "${KCTL[@]}" -n "$NAMESPACE" create secret generic jadi-wni-secret \
     --from-literal=GOOGLE_CLIENT_ID="$GOOGLE_CLIENT_ID" \
     --from-literal=GOOGLE_CLIENT_SECRET="$GOOGLE_CLIENT_SECRET" \
+    --from-literal=AI_BASE_URL="${AI_BASE_URL:-}" \
+    --from-literal=AI_MODEL="${AI_MODEL:-}" \
+    --from-literal=AI_API_KEY="${AI_API_KEY:-}" \
     --dry-run=client -o yaml | "${KCTL[@]}" apply -f -
 elif ! "${KCTL[@]}" -n "$NAMESPACE" get secret jadi-wni-secret >/dev/null 2>&1; then
   echo "ERROR: Secret jadi-wni-secret belum ada. Set GOOGLE_CLIENT_ID dan GOOGLE_CLIENT_SECRET." >&2

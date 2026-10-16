@@ -3,7 +3,8 @@
 		TILES,
 		GROUPS,
 		HOUSE_LEVELS,
-		MAX_LEVEL,
+		maxLevelOf,
+		canSawit,
 		SAWIT_LEVEL,
 		SAWIT_SALARY_BONUS,
 		buildCost,
@@ -68,14 +69,14 @@
 							<th>Tanah kosong</th><td>{formatRp(t.rent[0])}</td>
 						</tr>
 						<tr><th class="note" colspan="2">Sewa dobel kalau kuasai semua kota di grup</th></tr>
-						{#each HOUSE_LEVELS.slice(1) as lvl, k}
+						{#each HOUSE_LEVELS.slice(1, maxLevelOf(t) + 1) as lvl, k}
 							<tr class:cur={own?.level === k + 1}>
 								<th>{lvl.icon} {lvl.name}</th><td>{formatRp(t.rent[k + 1])}</td>
 							</tr>
 						{/each}
 					</tbody>
 				</table>
-				<p class="meta">Harga {formatRp(t.price)} · Bangun per level {formatRp(group.houseCost)} · Kebun Sawit {formatRp(buildCost(group.houseCost, SAWIT_LEVEL))} (+{formatRp(SAWIT_SALARY_BONUS)} gaji GAJIAN) · Gadai {formatRp(t.price / 2)}</p>
+				<p class="meta">Harga {formatRp(t.price)} · Bangun per level {formatRp(group.houseCost)} · {#if canSawit(t)}Kebun Sawit {formatRp(buildCost(group.houseCost, SAWIT_LEVEL))} (+{formatRp(SAWIT_SALARY_BONUS)} gaji GAJIAN){:else}🌴 Sawit tidak cocok di sini (hanya Medan, Balikpapan, Makassar, Raja Ampat){/if} · Gadai {formatRp(t.price / 2)}</p>
 			{:else if t.type === 'station'}
 				<table>
 					<tbody>
@@ -145,7 +146,7 @@
 
 			{#if mine}
 				<div class="actions">
-					{#if t.type === 'property' && !own.mortgaged && own.level < MAX_LEVEL}
+					{#if t.type === 'property' && !own.mortgaged && own.level < maxLevelOf(t)}
 						<button class="btn primary small" onclick={() => onAction({ type: 'build', tile: index })}>
 							Bangun {HOUSE_LEVELS[own.level + 1].name} ({formatRp(buildCost(group.houseCost, own.level + 1))})
 						</button>
