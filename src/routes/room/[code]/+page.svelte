@@ -69,44 +69,56 @@
 	// saldo pemain baru berubah (dengan animasi) setelah bidak sampai dan kartu terlihat sebentar
 	let cardFresh = $state(false);
 
-	// judol slot: tiga gulungan berputar lalu berhenti satu-satu; saldo baru berubah setelah semuanya berhenti
-	let judol = $state(/** @type {any} */ (null));
-	let judolReels = $state(/** @type {string[]} */ (['❔', '❔', '❔']));
-	let judolStopped = $state(0);
+	// judol slot: tiga gulungan berputar lalu berhenti satu-satu; saldo baru berubah setelah semuanya berhenti.
+	// Dipetakan per pemain supaya beberapa animasi bisa jalan bersamaan tanpa saling menimpa.
+	let juds = $state(/** @type {Record<string, any>} */ ({}));
 	let lastJudolSeq = -1;
-	let judolTimers = [];
+	/** @type {Record<string, any[]>} timer aktif per pemain */
+	const judTimers = {};
 	const REEL_STOP_MS = [900, 1500, 2100];
 	function startJudol(j) {
-		judolTimers.forEach(clearTimeout);
-		judolTimers.forEach(clearInterval);
-		judol = { ...j, done: false };
-		judolStopped = 0;
+		const pid = j.playerId;
+		(judTimers[pid] ?? []).forEach(clearTimeout);
+		(judTimers[pid] ?? []).forEach(clearInterval);
+		juds[pid] = { ...j, done: false, reels: ['❔', '❔', '❔'], stopped: 0 };
 		play('dice');
 		const spin = setInterval(() => {
-			judolReels = judolReels.map((r, i) =>
-				i < judolStopped ? j.reels[i] : SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]
+			const cur = juds[pid];
+			if (!cur) return;
+			cur.reels = cur.reels.map((r, i) =>
+				i < cur.stopped ? j.reels[i] : SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]
 			);
 		}, 70);
-		judolTimers = [
+		judTimers[pid] = [
 			spin,
 			...REEL_STOP_MS.map((ms, i) =>
 				setTimeout(() => {
-					judolStopped = i + 1;
-					judolReels = judolReels.map((r, k) => (k <= i ? j.reels[k] : r));
+					const cur = juds[pid];
+					if (!cur) return;
+					cur.stopped = i + 1;
+					cur.reels = cur.reels.map((r, k) => (k <= i ? j.reels[k] : r));
 					play('notif');
 				}, ms)
 			),
 			setTimeout(() => {
 				clearInterval(spin);
-				judolReels = [...j.reels];
-				judol = { ...j, done: true };
+				const cur = juds[pid];
+				if (cur) {
+					cur.reels = [...j.reels];
+					cur.done = true;
+				}
 				play(j.delta > 0 ? 'good' : j.delta < 0 ? 'bad' : 'notif');
 			}, 2300),
-			setTimeout(() => (judol = null), 5300)
+			setTimeout(() => {
+				delete juds[pid];
+				delete judTimers[pid];
+			}, 5300)
 		];
 	}
+	/** true selama animasi judod pemain ini belum selesai (menahan saldo kartunya) */
+	const judHold = (pid) => !!juds[pid] && !juds[pid].done;
 	let freshTimer;
-	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh || (!!judol && !judol.done));
+	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh);
 
 	// kartu baru muncul setelah dadu berhenti dan bidak sampai
 	$effect(() => {
@@ -746,21 +758,22 @@
 						isHost={p.id === game.hostId}
 						roomCode={data.code}
 						onCopyCode={copyInvite}
-						hold={holdMoney}
+						hold={holdMoney || judHold(p.id)}
 						{salary}
 					/>
-					{#if judol && judol.playerId === p.id}
-						<div class="judol-pop" class:win={judol.done && judol.delta > 0} class:lose={judol.done && judol.delta < 0} aria-live="polite">
+					{#if juds[p.id]}
+						{@const jd = juds[p.id]}
+						<div class="judol-pop" class:win={jd.done && jd.delta > 0} class:lose={jd.done && jd.delta < 0} aria-live="polite">
 							<div class="reels">
-								{#each judolReels as r, i (i)}
-									<span class="reel" class:spin={i >= judolStopped}>{r}</span>
+								{#each jd.reels as r, i (i)}
+									<span class="reel" class:spin={i >= jd.stopped}>{r}</span>
 								{/each}
 							</div>
 							<div class="jinfo">
-								<small>🎰 Taruhan {formatRp(judol.bet)}</small>
-								{#if judol.done}
-									<strong class="jpct">{judol.pct > 0 ? '+' : ''}{judol.pct}%</strong>
-									<span class="jdelta">{judol.pct >= 90 ? '🎉 JACKPOT! ' : ''}{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
+								<small>🎰 Taruhan {formatRp(jd.bet)}</small>
+								{#if jd.done}
+									<strong class="jpct">{jd.pct > 0 ? '+' : ''}{jd.pct}%</strong>
+									<span class="jdelta">{jd.pct >= 90 ? '🎉 JACKPOT! ' : ''}{jd.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(jd.delta))}</span>
 								{:else}
 									<span class="jdelta">Memutar…</span>
 								{/if}
@@ -1466,7 +1479,7 @@
 			transform: translate(-50%, -50%);
 		}
 	}
-	/* visual judol: muncul di sisi kiri kartu pemain, tinggi sama dengan kartu */
+	/* visual judod: slot menimpa kartu pemain yang sedang main (tiap pemain punya popup sendiri) */
 	.judol-pop {
 		position: absolute;
 		left: 50%;
