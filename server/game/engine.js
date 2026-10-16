@@ -769,25 +769,28 @@ function stockSell(state, userId, sym, qty) {
 const MARKET_MAX_PRICE = 100000;
 
 /**
- * Visual judol: bot "ngebid" buy/sell acak di harga 100; candle bergerak acak lalu berakhir di harga
- * yang konsisten dengan hasil (buy untung kalau harga naik, sell untung kalau harga turun).
+ * Visual judol slot: tiga gulungan yang konsisten dengan hasil acak.
+ * >= +90% jackpot 7-7-7, +50..89% tiga sama, +1..49% dua sama, 0% campur,
+ * -1..-49% ada 💀, -50..-89% dua 💀, <= -90% tiga 💀.
  */
-function judolChart(side, pct, rng) {
-	const N = 14;
-	const entry = 100;
-	const exit = +(entry + (side === 'buy' ? 1 : -1) * pct * 0.2).toFixed(2);
-	const candles = [];
-	let prev = entry;
-	for (let i = 1; i <= N; i++) {
-		const trend = entry + ((exit - entry) * i) / N;
-		const noise = (rng() * 2 - 1) * 6 * (1 - i / N);
-		const c = i === N ? exit : +(trend + noise).toFixed(2);
-		const h = +(Math.max(prev, c) + rng() * 2.5).toFixed(2);
-		const l = +(Math.min(prev, c) - rng() * 2.5).toFixed(2);
-		candles.push({ o: prev, h, l, c });
-		prev = c;
+function judolReels(pct, rng) {
+	const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+	const fruit = ['💎', '🍒', '🍋', '🔔'];
+	const shuffle3 = (r) => shuffle(r, rng);
+	if (pct >= 90) return ['7️⃣', '7️⃣', '7️⃣'];
+	if (pct >= 50) {
+		const f = pick(fruit);
+		return [f, f, f];
 	}
-	return { entry, exit, candles };
+	if (pct >= 1) {
+		const f = pick(fruit);
+		return shuffle3([f, f, pick(fruit.filter((x) => x !== f))]);
+	}
+	if (pct === 0) return shuffle3(['🍒', '🍋', '🔔']);
+	if (pct <= -90) return ['💀', '💀', '💀'];
+	if (pct <= -50) return shuffle3(['💀', '💀', pick(fruit)]);
+	const [x, y] = shuffle3([...fruit]).slice(0, 2);
+	return shuffle3(['💀', x, y]);
 }
 
 /** Judol: taruhan acak, hasil -100% sampai +100% dari taruhan (rata-rata impas) */
@@ -800,8 +803,7 @@ function judol(state, userId, amount, rng) {
 	const delta = Math.round((bet * pct) / 100);
 	p.money += delta;
 	state.seq += 1;
-	const side = rng() < 0.5 ? 'buy' : 'sell';
-	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, side, ...judolChart(side, pct, rng) };
+	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, reels: judolReels(pct, rng) };
 	log(
 		state,
 		`🎰 ${p.name} main judol ${formatRp(bet)}: ${delta >= 0 ? 'menang' : 'kalah'} ${formatRp(Math.abs(delta))} (${pct > 0 ? '+' : ''}${pct}%).`

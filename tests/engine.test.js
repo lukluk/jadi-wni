@@ -443,17 +443,23 @@ test('kekayaan bersih tembus 10 M -> otomatis menang', () => {
 	assert.equal(s.winner, a.id);
 });
 
-test('judol: candle konsisten dengan hasil (buy untung kalau naik, sell untung kalau turun)', () => {
-	for (const seed of [1, 2, 3, 4, 5, 6]) {
+test('judol slot: gulungan konsisten dengan hasil', () => {
+	const skulls = (r) => r.filter((x) => x === '💀').length;
+	for (const [rngv, check] of [
+		[0, (j) => assert.deepEqual(j.reels, ['💀', '💀', '💀'])], // -100%
+		[0.99999, (j) => assert.deepEqual(j.reels, ['7️⃣', '7️⃣', '7️⃣'])] // +100%
+	]) {
+		const s = newGame(2, seeded(3));
+		applyAction(s, s.players[0].id, { type: 'judol', amount: 10 }, () => rngv);
+		check(s.lastJudol);
+	}
+	for (const seed of [1, 2, 3, 4, 5, 6, 7, 8]) {
 		const s = newGame(2, seeded(seed));
-		applyAction(s, s.players[0].id, { type: 'judol', amount: 10 }, seeded(seed * 7));
-		const j = s.lastJudol;
-		assert.ok(j.side === 'buy' || j.side === 'sell');
-		assert.equal(j.candles.length, 14);
-		assert.equal(j.candles[0].o, j.entry);
-		assert.equal(j.candles.at(-1).c, j.exit);
-		if (j.pct !== 0) assert.equal(j.exit > j.entry, (j.side === 'buy') === j.pct > 0);
-		for (const c of j.candles) assert.ok(c.h >= Math.max(c.o, c.c) && c.l <= Math.min(c.o, c.c));
+		applyAction(s, s.players[0].id, { type: 'judol', amount: 10 }, seeded(seed * 11));
+		const { pct, reels } = s.lastJudol;
+		assert.equal(reels.length, 3);
+		if (pct > 0) assert.equal(skulls(reels), 0);
+		if (pct < 0) assert.ok(skulls(reels) >= 1);
 	}
 });
 

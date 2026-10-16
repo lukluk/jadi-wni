@@ -238,6 +238,9 @@ export const JAIL_CARD = { name: 'Kartu Pemutihan', short: '🎫', type: 'card',
 /** petak (angka) atau kartu (kunci "card:...") untuk satu listing Pasar */
 export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
 
+/** simbol gulungan judol slot */
+export const SLOT_SYMBOLS = ['7️⃣', '💎', '🍒', '🍋', '🔔', '💀'];
+
 /** kekayaan bersih (uang + aset + saham) segini = langsung menang (Rp 10 M) */
 export const WIN_NETWORTH = 10000;
 

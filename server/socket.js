@@ -21,6 +21,8 @@ import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CHAT_LIMIT = 60;
+/** id proses ini; client yang menyambung ulang ke id berbeda berarti server baru (deploy) -> muat ulang halaman */
+const BOOT_ID = `${Date.now().toString(36)}${randomInt(1e6).toString(36)}`;
 
 /** @type {Map<string, any>} rooms aktif di memori (sumber kebenaran; disalin ke SQLite) */
 const rooms = new Map();
@@ -116,8 +118,23 @@ export function attachSocket(httpServer) {
 		next();
 	});
 
+	// SIGTERM (deploy): simpan semua room lalu keluar segera; client otomatis menyambung ulang
+	const shutdown = () => {
+		for (const state of rooms.values()) {
+			try {
+				persist(state);
+			} catch (e) {
+				console.error(e);
+			}
+		}
+		process.exit(0);
+	};
+	process.once('SIGTERM', shutdown);
+	process.once('SIGINT', shutdown);
+
 	io.on('connection', (socket) => {
 		const user = socket.data.user;
+		socket.emit('server:boot', BOOT_ID);
 		/** @type {string|null} */
 		let joined = null;
 

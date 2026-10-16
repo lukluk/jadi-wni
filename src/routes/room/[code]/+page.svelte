@@ -11,7 +11,6 @@
 	import Netizen from '$lib/components/Netizen.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Market from '$lib/components/Market.svelte';
-	import Candles from '$lib/components/Candles.svelte';
 	import Portfolio from '$lib/components/Portfolio.svelte';
 	import {
 		TILES,
@@ -26,7 +25,8 @@
 		surrenderPlan,
 		formatAmt,
 		salaryFor,
-		calendarDate
+		calendarDate,
+		SLOT_SYMBOLS
 	} from '$lib/shared/board.js';
 
 	let { data } = $props();
@@ -85,32 +85,40 @@
 	// saldo pemain baru berubah (dengan animasi) setelah bidak sampai dan kartu terlihat sebentar
 	let cardFresh = $state(false);
 
-	// judol: layar trading — candle muncul satu-satu (bid buy/sell acak), saldo baru berubah setelah selesai
+	// judol slot: tiga gulungan berputar lalu berhenti satu-satu; saldo baru berubah setelah semuanya berhenti
 	let judol = $state(/** @type {any} */ (null));
-	let judolShown = $state(0);
+	let judolReels = $state(/** @type {string[]} */ (['❔', '❔', '❔']));
+	let judolStopped = $state(0);
 	let lastJudolSeq = -1;
 	let judolTimers = [];
-	const JUDOL_STEP_MS = 200;
+	const REEL_STOP_MS = [900, 1500, 2100];
 	function startJudol(j) {
 		judolTimers.forEach(clearTimeout);
 		judolTimers.forEach(clearInterval);
 		judol = { ...j, done: false };
-		judolShown = 0;
+		judolStopped = 0;
 		play('dice');
-		const total = j.candles?.length ?? 0;
-		const iv = setInterval(() => {
-			judolShown = Math.min(total, judolShown + 1);
-			if (judolShown >= total) clearInterval(iv);
-		}, JUDOL_STEP_MS);
+		const spin = setInterval(() => {
+			judolReels = judolReels.map((r, i) =>
+				i < judolStopped ? j.reels[i] : SLOT_SYMBOLS[Math.floor(Math.random() * SLOT_SYMBOLS.length)]
+			);
+		}, 70);
 		judolTimers = [
-			iv,
+			spin,
+			...REEL_STOP_MS.map((ms, i) =>
+				setTimeout(() => {
+					judolStopped = i + 1;
+					judolReels = judolReels.map((r, k) => (k <= i ? j.reels[k] : r));
+					play('notif');
+				}, ms)
+			),
 			setTimeout(() => {
-				clearInterval(iv);
-				judolShown = total;
+				clearInterval(spin);
+				judolReels = [...j.reels];
 				judol = { ...j, done: true };
 				play(j.delta > 0 ? 'good' : j.delta < 0 ? 'bad' : 'notif');
-			}, total * JUDOL_STEP_MS + 300),
-			setTimeout(() => (judol = null), total * JUDOL_STEP_MS + 3300)
+			}, 2300),
+			setTimeout(() => (judol = null), 5300)
 		];
 	}
 	let freshTimer;
@@ -314,8 +322,13 @@
 	}
 
 	async function join() {
-		const res = await call('room:join', { code: data.code });
-		if (!res.ok) joinError = res.error;
+		// server bisa masih bangun sesaat setelah deploy; coba lagi sebelum menyerah
+		let res = await call('room:join', { code: data.code });
+		for (let i = 0; i < 5 && !res.ok && res.error === 'Server tidak merespons.'; i++) {
+			await new Promise((r) => setTimeout(r, 1500));
+			res = await call('room:join', { code: data.code });
+		}
+		joinError = res.ok ? '' : res.error;
 	}
 
 	onMount(() => {
@@ -816,20 +829,19 @@
 	{/if}
 
 	{#if judol}
-		{@const last = judol.candles?.[Math.max(0, judolShown - 1)]}
 		<div class="judol-pop" class:win={judol.done && judol.delta > 0} class:lose={judol.done && judol.delta < 0} aria-live="polite">
 			<span class="card-kind">🎰 Judol · {judol.playerName}</span>
-			<div class="jtrade">
-				<span class="jside" class:sell={judol.side === 'sell'}>{judol.side === 'sell' ? '🔴 SELL' : '🟢 BUY'}</span>
-				<small>Taruhan {formatRp(judol.bet)} @ {judol.entry}</small>
-				<strong class="jprice">{last ? last.c.toFixed(2) : judol.entry}</strong>
+			<small>Taruhan {formatRp(judol.bet)}</small>
+			<div class="reels">
+				{#each judolReels as r, i (i)}
+					<span class="reel" class:spin={i >= judolStopped}>{r}</span>
+				{/each}
 			</div>
-			<Candles candles={judol.candles.slice(0, judolShown)} slots={judol.candles.length} entry={judol.entry} height={110} />
 			{#if judol.done}
 				<strong class="jpct">{judol.pct > 0 ? '+' : ''}{judol.pct}%</strong>
-				<span class="jdelta">{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
+				<span class="jdelta">{judol.pct >= 90 ? '🎉 JACKPOT! ' : ''}{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
 			{:else}
-				<span class="jdelta">Order berjalan…</span>
+				<span class="jdelta">Memutar…</span>
 			{/if}
 		</div>
 	{/if}
@@ -1469,21 +1481,25 @@
 	.judol-pop.lose {
 		background: #fde0dc;
 	}
-	.jtrade {
+	.reels {
 		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.4rem;
+		justify-content: center;
+		gap: 0.5rem;
+		margin: 0.3rem 0;
 	}
-	.jside {
-		font-weight: 900;
-		color: #1f8a4c;
+	.reel {
+		width: 4.2rem;
+		height: 4.6rem;
+		display: grid;
+		place-items: center;
+		font-size: 2.6rem;
+		background: #fff;
+		border: 3px solid var(--ink);
+		border-radius: 10px;
+		box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.08);
 	}
-	.jside.sell {
-		color: var(--merah);
-	}
-	.jprice {
-		font-variant-numeric: tabular-nums;
+	.reel.spin {
+		filter: blur(1.5px);
 	}
 	.jpct {
 		font-size: 2.2rem;
