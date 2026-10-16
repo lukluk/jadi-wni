@@ -231,6 +231,21 @@ export const JAIL_CARD = { name: 'Kartu Pemutihan', short: '🎫', type: 'card',
 /** petak (angka) atau kartu (kunci "card:...") untuk satu listing Pasar */
 export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
 
+/** Sogok aparat: pemain berduit >= Rp 2 M bisa memaksa pemilik menjual asetnya */
+export const SOGOK_MIN_MONEY = 2000;
+export const SOGOK_FEE = 500; // uang sogok ke aparat (Kas Negara), tetap Rp 500 jt, di luar harga aset
+export const SOGOK_RISK = 0.2; // peluang ketahuan KPK
+
+/** harga asli aset (petak + bangunan) yang dibayar ke pemilik saat dipaksa jual, belum termasuk uang sogok */
+export function sogokPrice(state, tileIdx) {
+	const tile = TILES[tileIdx];
+	const own = state.tiles[tileIdx];
+	if (!tile || !own) return 0;
+	const built = tile.type === 'property' ? investedCost(GROUPS[tile.group].houseCost, own.level) : 0;
+	return tile.price + built;
+}
+export const sogokFee = () => SOGOK_FEE;
+
 export const formatRp = (n) => `${n < 0 ? '-' : ''}Rp ${formatAmt(n)}`;
 
 /** nilai saham yang dipegang pemain pada harga pasar sekarang */

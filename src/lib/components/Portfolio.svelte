@@ -1,5 +1,5 @@
 <script>
-	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, formatRp } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, formatRp, SOGOK_MIN_MONEY, SOGOK_RISK, sogokPrice, sogokFee } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -47,6 +47,22 @@
 	let bet = $state(10);
 	const betN = $derived(Math.max(0, Math.floor(Number(bet)) || 0));
 	const fraction = (f) => (bet = Math.max(1, Math.floor((me?.money ?? 0) * f)));
+
+	// sogok aparat: paksa pemilik jual aset (butuh saldo >= 2 M, sekali per giliran)
+	const sogokOpen = $derived(!!me && me.money >= SOGOK_MIN_MONEY);
+	const myTurn = $derived(game.players[game.turn]?.id === meId);
+	const sogokReady = $derived(
+		sogokOpen && myTurn && (game.phase === 'roll' || game.phase === 'end') && !me?.inJail && me?.sogokTurn !== game.turnCount
+	);
+	const targets = $derived(
+		Object.entries(game.tiles)
+			.filter(([, t]) => t.owner !== meId && !game.players.find((p) => p.id === t.owner)?.bankrupt)
+			.map(([i, t]) => {
+				const price = sogokPrice(game, +i);
+				return { tile: TILES[+i], own: t, price, fee: sogokFee(price), owner: game.players.find((p) => p.id === t.owner) };
+			})
+			.sort((a, b) => a.tile.i - b.tile.i)
+	);
 
 	// popup daftar saham untuk beli
 	let showBuy = $state(false);
@@ -142,6 +158,33 @@
 				<button class="btn danger-btn" disabled={betN < 1 || betN > me.money} onclick={() => onAction({ type: 'judol', amount: betN })}>
 					🎲 Taruhan {formatRp(betN)}
 				</button>
+			</section>
+		{/if}
+
+		{#if playing && sogokOpen}
+			<section class="sogok">
+				<h4>🕴️ Sogok Aparat</h4>
+				<p class="note">
+					Saldo ≥ {formatRp(SOGOK_MIN_MONEY)} → paksa pemilik jual asetnya di harga asli (petak + bangunan) ditambah uang sogok {formatRp(sogokFee())} ke Kas Negara.
+					Risiko {Math.round(SOGOK_RISK * 100)}% ketahuan KPK: sogok hangus & masuk Ruang Sidang. Sekali per giliran, saat gilirmu.
+				</p>
+				{#each targets as t (t.tile.i)}
+					<div class="target">
+						<span class="tn">
+							{#if t.tile.group}<i class="band" style:background={GROUPS[t.tile.group].color}></i>{/if}
+							{t.tile.name} <small>· {t.owner?.name}</small>
+						</span>
+						<button
+							class="btn small danger-btn"
+							disabled={!sogokReady || me.money < t.price + t.fee}
+							onclick={() => onAction({ type: 'sogokPaksa', tile: t.tile.i })}
+						>
+							{formatRp(t.price + t.fee)}
+						</button>
+					</div>
+				{:else}
+					<p class="empty">Belum ada aset milik pemain lain.</p>
+				{/each}
 			</section>
 		{/if}
 
@@ -349,6 +392,27 @@
 		border-radius: 10px;
 		padding: 0.5rem 0.6rem;
 		background: #fff3f0;
+	}
+	.sogok {
+		border: 2px dashed var(--ink);
+		border-radius: 10px;
+		padding: 0.5rem 0.6rem;
+		background: #f3f0ff;
+	}
+	.target {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.4rem;
+		padding: 0.2rem 0;
+		font-size: 0.85rem;
+	}
+	.target .band {
+		display: inline-block;
+		width: 0.6rem;
+		height: 0.6rem;
+		border-radius: 2px;
+		margin-right: 0.25rem;
 	}
 	.danger-btn {
 		background: var(--merah);

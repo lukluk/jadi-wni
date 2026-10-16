@@ -27,7 +27,11 @@ import {
 	formatRp,
 	stockValue,
 	netWorth,
-	surrenderPlan
+	surrenderPlan,
+	SOGOK_MIN_MONEY,
+	SOGOK_RISK,
+	sogokPrice,
+	sogokFee
 } from '../../src/lib/shared/board.js';
 
 export { stockValue, netWorth };
@@ -761,6 +765,46 @@ function judol(state, userId, amount, rng) {
 	);
 }
 
+/**
+ * Sogok aparat: pemain berduit >= Rp 2 M memaksa pemilik menjual aset di harga premium.
+ * Sekali per giliran; 20% ketahuan KPK -> sogok hangus ke Kas Negara & masuk Ruang Sidang.
+ */
+function sogokPaksa(state, userId, tileIdx, rng) {
+	const p = requireTurn(state, userId);
+	if (state.phase !== 'roll' && state.phase !== 'end') fail('Selesaikan aksimu dulu sebelum menyogok.');
+	if (p.inJail) fail('Dari Ruang Sidang tidak bisa menyogok.');
+	if (p.money < SOGOK_MIN_MONEY) fail(`Sogok aparat butuh saldo minimal ${formatRp(SOGOK_MIN_MONEY)}.`);
+	if (p.sogokTurn === state.turnCount) fail('Sudah menyogok di giliran ini.');
+	const idx = Math.floor(Number(tileIdx));
+	const tile = TILES[idx];
+	const own = state.tiles[idx];
+	if (!tile || !own) fail('Petak ini tidak ada pemiliknya.');
+	const owner = playerById(state, own.owner);
+	if (!owner || owner.bankrupt) fail('Pemilik sudah tidak aktif.');
+	if (owner.id === p.id) fail('Itu asetmu sendiri.');
+	const price = sogokPrice(state, idx);
+	const fee = sogokFee();
+	if (p.money < price + fee) fail(`Uang kurang, butuh ${formatRp(price + fee)} (harga aset + sogok).`);
+	p.sogokTurn = state.turnCount;
+	if (rng() < SOGOK_RISK) {
+		pay(state, p, fee);
+		sendToJail(state, p);
+		state.phase = 'end';
+		log(state, `🚨 KPK OTT! ${p.name} ketahuan menyogok aparat untuk ${tile.name}, sogok ${formatRp(fee)} hangus ke Kas Negara.`);
+		return;
+	}
+	p.money -= price;
+	owner.money += price;
+	pay(state, p, fee);
+	own.owner = p.id;
+	dropListing(state, idx);
+	mkEvent(state, 'sold', idx, p.id, owner.id, price, { from: owner.id, to: p.id });
+	log(
+		state,
+		`🕴️ ${p.name} menyogok aparat: ${tile.name} milik ${owner.name} dipaksa jual ${formatRp(price)} (sogok ${formatRp(fee)} ke Kas Negara).`
+	);
+}
+
 const cardKey = (id) => `card:${id}`;
 const listingName = (key) => (isCardKey(key) ? 'Kartu Pemutihan' : TILES[key].name);
 const market = (state) => (state.market ??= {});
@@ -1055,6 +1099,9 @@ export function applyAction(state, userId, action, rng = Math.random) {
 
 		case 'judol':
 			return judol(state, userId, action.amount, rng);
+
+		case 'sogokPaksa':
+			return sogokPaksa(state, userId, action.tile, rng);
 
 		case 'mkList':
 			return listAsset(state, userId, action.tile, action.price);

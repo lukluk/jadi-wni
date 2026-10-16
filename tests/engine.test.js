@@ -404,6 +404,31 @@ test('judol: hasil -100%..+100% dari taruhan, taruhan tidak boleh melebihi saldo
 	assert.throws(() => applyAction(s, p.id, { type: 'judol', amount: 0 }, () => 0.5), GameError);
 });
 
+test('sogok aparat: saldo >= 2 M paksa beli aset; ketahuan KPK masuk penjara', () => {
+	const s = newGame(2, seeded(3));
+	const [a, b] = s.players;
+	const cur = s.players[s.turn];
+	const other = cur === a ? b : a;
+	s.tiles[1] = { owner: other.id, level: 0, mortgaged: false };
+	assert.throws(() => applyAction(s, cur.id, { type: 'sogokPaksa', tile: 1 }, () => 0.9), GameError); // saldo < 2 M
+	cur.money = 3000;
+	const price = TILES[1].price;
+	const fee = 500;
+	const before = other.money;
+	const kas = s.kasNegara;
+	applyAction(s, cur.id, { type: 'sogokPaksa', tile: 1 }, () => 0.9);
+	assert.equal(s.tiles[1].owner, cur.id);
+	assert.equal(cur.money, 3000 - price - fee);
+	assert.equal(other.money, before + price);
+	assert.equal(s.kasNegara, kas + fee);
+	assert.throws(() => applyAction(s, cur.id, { type: 'sogokPaksa', tile: 3 }, () => 0.9), GameError); // sekali per giliran
+	s.turnCount += 1;
+	s.tiles[3] = { owner: other.id, level: 0, mortgaged: false };
+	applyAction(s, cur.id, { type: 'sogokPaksa', tile: 3 }, () => 0.1); // ketahuan
+	assert.equal(s.tiles[3].owner, other.id);
+	assert.equal(cur.inJail, true);
+});
+
 test('kartu Pemutihan bisa dijual di Pasar dan pindah ke pembeli', () => {
 	const s = newGame(2, seeded(4));
 	const [a, b] = s.players;
