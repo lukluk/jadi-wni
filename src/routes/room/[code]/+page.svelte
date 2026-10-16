@@ -1469,15 +1469,15 @@
 	/* visual judol: muncul di sisi kiri kartu pemain, tinggi sama dengan kartu */
 	.judol-pop {
 		position: absolute;
-		right: calc(100% + 0.6rem);
-		top: 0;
-		bottom: 0;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
 		z-index: 64;
 		pointer-events: none;
 		display: flex;
 		align-items: center;
 		gap: 0.6rem;
-		padding: 0.35rem 0.6rem;
+		padding: 0.4rem 0.7rem;
 		background: var(--paper);
 		border: 3px solid var(--ink);
 		border-radius: 12px;
@@ -1488,7 +1488,7 @@
 	@keyframes jin {
 		from {
 			opacity: 0;
-			transform: translateX(12px);
+			transform: translate(-50%, -50%) scale(0.82);
 		}
 	}
 	.judol-pop.win {
@@ -1505,12 +1505,11 @@
 	.reels {
 		display: flex;
 		gap: 0.3rem;
-		height: 100%;
 		align-items: center;
 	}
 	.reel {
 		width: 2.6rem;
-		height: min(100%, 3.2rem);
+		height: 2.9rem;
 		display: grid;
 		place-items: center;
 		font-size: 1.7rem;
@@ -1783,9 +1782,7 @@
 	}
 	@media (max-width: 900px) {
 		.judol-pop {
-			right: 0;
-			left: 0;
-			justify-content: center;
+			max-width: 94%;
 		}
 		.game {
 			grid-template-columns: 1fr;
