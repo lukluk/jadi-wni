@@ -20,6 +20,7 @@ import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
 import { botStep, maybeAddBot } from './bot.js';
 import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
+import { config } from './config.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const CHAT_LIMIT = 60;
@@ -64,6 +65,53 @@ function onlineIds(code) {
 
 function broadcast(io, state) {
 	io.to(state.code).emit('room:state', { ...publicState(state), online: onlineIds(state.code), now: Date.now() });
+}
+
+const isAdmin = (user) => !!user?.email && user.email.toLowerCase() === config.adminEmail;
+
+/** Ringkasan semua room aktif untuk halaman admin (hanya data yang perlu untuk memantau). */
+function adminSnapshot() {
+	return [...rooms.values()].map((s) => {
+		const online = onlineIds(s.code);
+		return {
+			code: s.code,
+			status: s.status,
+			createdAt: s.createdAt,
+			turnCount: s.turnCount ?? 0,
+			kasNegara: s.kasNegara ?? 0,
+			hostId: s.hostId,
+			turnId: s.players[s.turn]?.id ?? null,
+			winnerId: s.winner ?? null,
+			online: online.length,
+			players: s.players.map((p) => ({
+				id: p.id,
+				name: p.name,
+				money: p.money,
+				pos: p.pos,
+				bankrupt: !!p.bankrupt,
+				bot: !!p.bot,
+				host: p.id === s.hostId,
+				online: online.includes(p.id)
+			}))
+		};
+	});
+}
+
+const ADMIN_ROOM = 'admin';
+function adminPayload() {
+	const list = adminSnapshot();
+	return {
+		now: Date.now(),
+		rooms: list,
+		totals: {
+			rooms: list.length,
+			lobby: list.filter((r) => r.status === 'lobby').length,
+			playing: list.filter((r) => r.status === 'playing').length,
+			ended: list.filter((r) => r.status === 'ended').length,
+			players: list.reduce((n, r) => n + r.players.filter((p) => !p.bot).length, 0),
+			bots: list.reduce((n, r) => n + r.players.filter((p) => p.bot).length, 0)
+		}
+	};
 }
 
 const voiceRoom = (code) => `voice:${code}`;
@@ -128,6 +176,11 @@ export function attachSocket(httpServer) {
 
 	// netizen AI: tiap 5 menit komentar kondisi pemain (butuh AI_API_KEY)
 	setInterval(() => tickNetizen(rooms, (code, feed) => io.to(code).emit('netizen:feed', feed)), 5000).unref?.();
+
+	// admin: kirim ringkasan semua room ke yang sedang memantau (hanya kalau ada yang nonton)
+	setInterval(() => {
+		if (io.sockets.adapter.rooms.get(ADMIN_ROOM)?.size) io.to(ADMIN_ROOM).emit('admin:rooms', adminPayload());
+	}, 1500).unref?.();
 
 	io.use((socket, next) => {
 		const cookies = parseCookie(socket.handshake.headers.cookie ?? '');
@@ -355,6 +408,14 @@ export function attachSocket(httpServer) {
 		socket.on('voice:query', (_p, ack) =>
 			ack?.({ members: joined ? voiceMembers(io, joined) : [], states: joined ? voiceStates(io, joined) : {} })
 		);
+
+		// admin: pantau semua room (khusus akun admin; dicek ulang di server, bukan cuma di client)
+		socket.on('admin:subscribe', (_p, ack) => {
+			if (!isAdmin(user)) return ack?.({ ok: false, error: 'Khusus admin.' });
+			socket.join(ADMIN_ROOM);
+			ack?.({ ok: true, ...adminPayload() });
+		});
+		socket.on('admin:unsubscribe', () => socket.leave(ADMIN_ROOM));
 
 		socket.on('disconnect', leaveCurrent);
 	});

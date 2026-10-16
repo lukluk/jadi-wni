@@ -18,5 +18,6 @@ export const config = {
 	googleClientId: process.env.GOOGLE_CLIENT_ID || '',
 	googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
 	origin: process.env.ORIGIN || 'http://localhost:5173',
-	allowDevLogin: process.env.ALLOW_DEV_LOGIN === 'true'
+	allowDevLogin: process.env.ALLOW_DEV_LOGIN === 'true',
+	adminEmail: (process.env.ADMIN_EMAIL || 'luklukaha@gmail.com').toLowerCase()
 };
