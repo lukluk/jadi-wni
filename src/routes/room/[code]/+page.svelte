@@ -793,6 +793,9 @@
 						<button class="btn small" onclick={surrender}>Menyerah</button>
 					{/if}
 					{#if isHost}
+						<button class="btn small" onclick={() => act({ type: 'autoPlay', on: !game.autoPlay })}>
+							{game.autoPlay ? '🤖 Matikan auto-play AI' : '🤖 Auto-play AI'}
+						</button>
 						<button class="btn small" onclick={() => confirmAct('Akhiri game sekarang? Pemenang = kekayaan bersih terbesar.', { type: 'endGame' })}>Akhiri game</button>
 					{/if}
 				</div>

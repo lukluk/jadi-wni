@@ -16,6 +16,7 @@ import {
 } from './game/engine.js';
 import { TOKENS } from '../src/lib/shared/board.js';
 import { refreshCityImages } from './cityImages.js';
+import { autopilotStep } from './autopilot.js';
 import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -89,6 +90,20 @@ export function attachSocket(httpServer) {
 			}
 		}
 	}, 1000).unref?.();
+
+	// auto-play AI: host yang mengaktifkannya dimainkan otomatis, satu langkah per detik
+	setInterval(() => {
+		for (const state of rooms.values()) {
+			try {
+				if (autopilotStep(state)) {
+					persist(state);
+					broadcast(io, state);
+				}
+			} catch (e) {
+				console.error(e);
+			}
+		}
+	}, 1200).unref?.();
 
 	// netizen AI: tiap 5 menit komentar kondisi pemain (butuh AI_API_KEY)
 	setInterval(() => tickNetizen(rooms, (code, feed) => io.to(code).emit('netizen:feed', feed)), 5000).unref?.();

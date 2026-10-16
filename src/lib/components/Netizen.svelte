@@ -17,7 +17,8 @@
 	onMount(() => {
 		const s = getSocket();
 		const onFeed = (f) => {
-			if (f?.at && f.at !== feed?.at && !open) unseen = true;
+			// feed baru langsung muncul sebagai popup, tidak perlu dipencet
+			if (f?.at && f.at !== feed?.at) open = true;
 			feed = f;
 		};
 		s.on('netizen:feed', onFeed);

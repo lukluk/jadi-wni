@@ -1078,6 +1078,13 @@ export function applyAction(state, userId, action, rng = Math.random) {
 			return surrender(state, p);
 		}
 
+		case 'autoPlay': {
+			if (state.hostId !== userId) fail('Hanya host yang bisa mengaktifkan auto-play AI.');
+			state.autoPlay = !!action.on;
+			log(state, state.autoPlay ? '🤖 Host mengaktifkan auto-play AI.' : '🤖 Auto-play AI dimatikan host.');
+			return;
+		}
+
 		case 'endGame': {
 			if (state.hostId !== userId) fail('Hanya host yang bisa mengakhiri game.');
 			if (state.status !== 'playing') fail('Game belum berjalan.');
