@@ -161,13 +161,16 @@
 			</section>
 		{/if}
 
-		{#if playing && sogokOpen}
+		{#if playing}
 			<section class="sogok">
 				<h4>🕴️ Sogok Aparat</h4>
 				<p class="note">
 					Saldo ≥ {formatRp(SOGOK_MIN_MONEY)} → paksa pemilik jual asetnya di harga asli (petak + bangunan) ditambah uang sogok {formatRp(sogokFee())} ke Kas Negara.
 					Risiko {Math.round(SOGOK_RISK * 100)}% ketahuan KPK: sogok hangus & masuk Ruang Sidang. Sekali per giliran, saat gilirmu.
 				</p>
+				{#if !sogokOpen}
+					<p class="note"><b>🔒 Terkunci</b> — saldomu {formatRp(me.money)}, butuh {formatRp(SOGOK_MIN_MONEY)}.</p>
+				{/if}
 				{#each targets as t (t.tile.i)}
 					<div class="target">
 						<span class="tn">
