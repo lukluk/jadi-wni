@@ -11,7 +11,7 @@
 	import Netizen from '$lib/components/Netizen.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Market from '$lib/components/Market.svelte';
-	import SogokModal from '$lib/components/SogokModal.svelte';
+	import Candles from '$lib/components/Candles.svelte';
 	import Portfolio from '$lib/components/Portfolio.svelte';
 	import {
 		TILES,
@@ -85,25 +85,32 @@
 	// saldo pemain baru berubah (dengan animasi) setelah bidak sampai dan kartu terlihat sebentar
 	let cardFresh = $state(false);
 
-	// judol: hasil diundi dulu ~1,4 dtk (angka berputar) baru saldo berubah
+	// judol: layar trading — candle muncul satu-satu (bid buy/sell acak), saldo baru berubah setelah selesai
 	let judol = $state(/** @type {any} */ (null));
-	let judolFace = $state(0);
+	let judolShown = $state(0);
 	let lastJudolSeq = -1;
 	let judolTimers = [];
+	const JUDOL_STEP_MS = 200;
 	function startJudol(j) {
 		judolTimers.forEach(clearTimeout);
 		judolTimers.forEach(clearInterval);
 		judol = { ...j, done: false };
+		judolShown = 0;
 		play('dice');
-		const iv = setInterval(() => (judolFace = Math.round(Math.random() * 200 - 100)), 70);
+		const total = j.candles?.length ?? 0;
+		const iv = setInterval(() => {
+			judolShown = Math.min(total, judolShown + 1);
+			if (judolShown >= total) clearInterval(iv);
+		}, JUDOL_STEP_MS);
 		judolTimers = [
 			iv,
 			setTimeout(() => {
 				clearInterval(iv);
+				judolShown = total;
 				judol = { ...j, done: true };
 				play(j.delta > 0 ? 'good' : j.delta < 0 ? 'bad' : 'notif');
-			}, 1400),
-			setTimeout(() => (judol = null), 4200)
+			}, total * JUDOL_STEP_MS + 300),
+			setTimeout(() => (judol = null), total * JUDOL_STEP_MS + 3300)
 		];
 	}
 	let freshTimer;
@@ -687,9 +694,6 @@
 										{countdown ? 'Lanjut sekarang' : 'Selesai giliran'}
 									</button>
 								{/if}
-								{#if (game.phase === 'roll' || game.phase === 'end') && !rolling && !moving}
-									<SogokModal {game} meId={me?.id} onAction={act} />
-								{/if}
 								{#if myPlayer.money < 0}
 									<button class="btn small" onclick={() => confirmAct('Yakin bangkrut? Semua asetmu disita bank.', { type: 'bankrupt' })}>Nyatakan bangkrut</button>
 								{/if}
@@ -812,14 +816,20 @@
 	{/if}
 
 	{#if judol}
+		{@const last = judol.candles?.[Math.max(0, judolShown - 1)]}
 		<div class="judol-pop" class:win={judol.done && judol.delta > 0} class:lose={judol.done && judol.delta < 0} aria-live="polite">
 			<span class="card-kind">🎰 Judol · {judol.playerName}</span>
-			<small>Taruhan {formatRp(judol.bet)}</small>
-			<strong class="jpct">{judol.done ? `${judol.pct > 0 ? '+' : ''}${judol.pct}%` : `${judolFace > 0 ? '+' : ''}${judolFace}%`}</strong>
+			<div class="jtrade">
+				<span class="jside" class:sell={judol.side === 'sell'}>{judol.side === 'sell' ? '🔴 SELL' : '🟢 BUY'}</span>
+				<small>Taruhan {formatRp(judol.bet)} @ {judol.entry}</small>
+				<strong class="jprice">{last ? last.c.toFixed(2) : judol.entry}</strong>
+			</div>
+			<Candles candles={judol.candles.slice(0, judolShown)} slots={judol.candles.length} entry={judol.entry} height={110} />
 			{#if judol.done}
+				<strong class="jpct">{judol.pct > 0 ? '+' : ''}{judol.pct}%</strong>
 				<span class="jdelta">{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
 			{:else}
-				<span class="jdelta">Memutar…</span>
+				<span class="jdelta">Order berjalan…</span>
 			{/if}
 		</div>
 	{/if}
@@ -1441,9 +1451,10 @@
 		transform: translate(-50%, -50%);
 		z-index: 64;
 		pointer-events: none;
-		width: min(280px, calc(100vw - 2rem));
+		width: min(340px, calc(100vw - 2rem));
 		display: grid;
-		justify-items: center;
+		justify-items: stretch;
+		text-align: center;
 		gap: 0.15rem;
 		padding: 0.9rem 1rem;
 		background: var(--paper);
@@ -1458,8 +1469,24 @@
 	.judol-pop.lose {
 		background: #fde0dc;
 	}
+	.jtrade {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.4rem;
+	}
+	.jside {
+		font-weight: 900;
+		color: #1f8a4c;
+	}
+	.jside.sell {
+		color: var(--merah);
+	}
+	.jprice {
+		font-variant-numeric: tabular-nums;
+	}
 	.jpct {
-		font-size: 2.6rem;
+		font-size: 2.2rem;
 		font-variant-numeric: tabular-nums;
 		line-height: 1.1;
 	}

@@ -29,8 +29,14 @@
 	});
 </script>
 
-<button class="btn small sogok-btn" onclick={() => (open = true)}>
-	🕴️ Sogok Aparat{#if !sogokOpen} <small>🔒 butuh {formatRp(SOGOK_MIN_MONEY)}</small>{/if}
+<button
+	class="sogok-btn"
+	class:locked={!sogokOpen}
+	onclick={() => (open = true)}
+	title={sogokOpen ? 'Sogok Aparat' : `Sogok Aparat (terkunci, butuh ${formatRp(SOGOK_MIN_MONEY)})`}
+	aria-label="Sogok Aparat"
+>
+	🕴️
 </button>
 
 {#if open && me}
@@ -71,12 +77,20 @@
 
 <style>
 	.sogok-btn {
+		flex: none;
+		width: 1.9rem;
+		height: 1.9rem;
+		padding: 0;
+		border: 2px solid var(--ink);
+		border-radius: 50%;
 		background: #f3f0ff;
-		border: 2px dashed var(--ink);
-		border-radius: 10px;
-		padding: 0.5rem 0.6rem;
-		font-weight: 800;
+		font-size: 1rem;
+		line-height: 1;
 		cursor: pointer;
+	}
+	.sogok-btn.locked {
+		opacity: 0.5;
+		filter: grayscale(1);
 	}
 	.target {
 		display: flex;

@@ -197,6 +197,13 @@ export const STOCKS = [
 ];
 export const STOCK_HISTORY = 24;
 
+/** candle OHLC saham; game lama yang belum punya `candles` diturunkan dari riwayat harga penutupan */
+export function candlesOf(st) {
+	if (st?.candles?.length) return st.candles;
+	const h = st?.history ?? [];
+	return h.slice(1).map((c, i) => ({ o: h[i], h: Math.max(h[i], c), l: Math.min(h[i], c), c }));
+}
+
 /** nilai dalam juta; 1000 juta = 1 M */
 export const formatAmt = (n) => {
 	const a = Math.abs(n);
@@ -230,6 +237,9 @@ export const isCardKey = (k) => typeof k === 'string' && k.startsWith('card:');
 export const JAIL_CARD = { name: 'Kartu Pemutihan', short: '🎫', type: 'card', group: null, price: 0 };
 /** petak (angka) atau kartu (kunci "card:...") untuk satu listing Pasar */
 export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
+
+/** kekayaan bersih (uang + aset + saham) segini = langsung menang (Rp 10 M) */
+export const WIN_NETWORTH = 10000;
 
 /** Sogok aparat: pemain berduit >= Rp 2 M bisa memaksa pemilik menjual asetnya */
 export const SOGOK_MIN_MONEY = 2000;

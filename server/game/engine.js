@@ -28,6 +28,8 @@ import {
 	stockValue,
 	netWorth,
 	surrenderPlan,
+	candlesOf,
+	WIN_NETWORTH,
 	SOGOK_MIN_MONEY,
 	SOGOK_RISK,
 	sogokPrice,
@@ -435,10 +437,20 @@ function nextTurn(state) {
 	while (current(state).bankrupt);
 	state.turnCount += 1;
 	log(state, `Giliran ${current(state).name}.`);
+	checkWinner(state);
 }
 
 function checkWinner(state) {
 	const left = alive(state);
+	if (state.status === 'playing') {
+		const rich = left.filter((p) => netWorth(state, p) >= WIN_NETWORTH).sort((a, b) => netWorth(state, b) - netWorth(state, a))[0];
+		if (rich) {
+			state.status = 'ended';
+			state.winner = rich.id;
+			log(state, `🏆 ${rich.name} tembus ${formatRp(WIN_NETWORTH)} dan jadi WNI paling sukses! Game selesai.`);
+			return;
+		}
+	}
 	if (state.status === 'playing' && left.length <= 1) {
 		state.status = 'ended';
 		state.winner = left[0]?.id ?? null;
@@ -675,7 +687,7 @@ function unmortgage(state, userId, tileIdx) {
 // state.stocks[sym] = { price, prev, history[] }; player.stocks[sym] = { qty, cost }
 
 function initStocks() {
-	return Object.fromEntries(STOCKS.map((s) => [s.sym, { price: s.base, prev: s.base, history: [s.base] }]));
+	return Object.fromEntries(STOCKS.map((s) => [s.sym, { price: s.base, prev: s.base, history: [s.base], candles: [] }]));
 }
 
 const stocksOf = (state) => (state.stocks ??= initStocks());
@@ -690,6 +702,14 @@ function tickStocks(state, rng = Math.random) {
 		const pull = 0.04 * Math.log(def.base / s.price);
 		const pct = Math.max(-0.25, Math.min(0.25, def.vol * z + pull));
 		const next = Math.max(Math.ceil(def.base * 0.2), Math.min(def.base * 5, Math.round(s.price * (1 + pct))));
+		const wick = () => 1 + rng() * def.vol * 0.7;
+		const candle = {
+			o: s.price,
+			h: Math.max(s.price, next, Math.round(Math.max(s.price, next) * wick())),
+			l: Math.max(1, Math.min(s.price, next, Math.round(Math.min(s.price, next) / wick()))),
+			c: next
+		};
+		s.candles = [...candlesOf(s), candle].slice(-STOCK_HISTORY);
 		s.prev = s.price;
 		s.price = next;
 		s.history = [...s.history, next].slice(-STOCK_HISTORY);
@@ -748,6 +768,28 @@ function stockSell(state, userId, sym, qty) {
 
 const MARKET_MAX_PRICE = 100000;
 
+/**
+ * Visual judol: bot "ngebid" buy/sell acak di harga 100; candle bergerak acak lalu berakhir di harga
+ * yang konsisten dengan hasil (buy untung kalau harga naik, sell untung kalau harga turun).
+ */
+function judolChart(side, pct, rng) {
+	const N = 14;
+	const entry = 100;
+	const exit = +(entry + (side === 'buy' ? 1 : -1) * pct * 0.2).toFixed(2);
+	const candles = [];
+	let prev = entry;
+	for (let i = 1; i <= N; i++) {
+		const trend = entry + ((exit - entry) * i) / N;
+		const noise = (rng() * 2 - 1) * 6 * (1 - i / N);
+		const c = i === N ? exit : +(trend + noise).toFixed(2);
+		const h = +(Math.max(prev, c) + rng() * 2.5).toFixed(2);
+		const l = +(Math.min(prev, c) - rng() * 2.5).toFixed(2);
+		candles.push({ o: prev, h, l, c });
+		prev = c;
+	}
+	return { entry, exit, candles };
+}
+
 /** Judol: taruhan acak, hasil -100% sampai +100% dari taruhan (rata-rata impas) */
 function judol(state, userId, amount, rng) {
 	const p = requireActive(state, userId);
@@ -758,7 +800,8 @@ function judol(state, userId, amount, rng) {
 	const delta = Math.round((bet * pct) / 100);
 	p.money += delta;
 	state.seq += 1;
-	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta };
+	const side = rng() < 0.5 ? 'buy' : 'sell';
+	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, side, ...judolChart(side, pct, rng) };
 	log(
 		state,
 		`🎰 ${p.name} main judol ${formatRp(bet)}: ${delta >= 0 ? 'menang' : 'kalah'} ${formatRp(Math.abs(delta))} (${pct > 0 ? '+' : ''}${pct}%).`
@@ -995,6 +1038,14 @@ function cleanMarketFor(state, playerId) {
  * @param {() => number} rng
  */
 export function applyAction(state, userId, action, rng = Math.random) {
+	try {
+		return dispatch(state, userId, action, rng);
+	} finally {
+		checkWinner(state);
+	}
+}
+
+function dispatch(state, userId, action, rng) {
 	switch (action?.type) {
 		case 'roll':
 			return doRoll(state, requireTurn(state, userId), rng);

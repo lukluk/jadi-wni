@@ -1,5 +1,7 @@
 <script>
-	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, formatRp } from '$lib/shared/board.js';
+	import Candles from './Candles.svelte';
+	import SogokModal from './SogokModal.svelte';
+	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -33,13 +35,6 @@
 		`${v > 0 ? '▲ +' : v < 0 ? '▼ −' : '■ '}${Math.abs(v).toLocaleString('id-ID', { maximumFractionDigits: 1 })}%`;
 	const dir = (v) => (v > 0 ? 'up' : v < 0 ? 'down' : 'flat');
 
-	function spark(history) {
-		const lo = Math.min(...history);
-		const hi = Math.max(...history);
-		const span = hi - lo || 1;
-		const step = history.length > 1 ? 100 / (history.length - 1) : 0;
-		return history.map((v, i) => `${(i * step).toFixed(1)},${(26 - ((v - lo) / span) * 24).toFixed(1)}`).join(' ');
-	}
 
 	let cardPrice = $state(/** @type {string|number|undefined} */ (undefined));
 
@@ -70,9 +65,7 @@
 		</div>
 	</header>
 	<div class="mid">
-		<svg viewBox="0 0 100 28" preserveAspectRatio="none" class="spark {dir(total)}" aria-hidden="true">
-			<polyline points={spark(b.st.history)} fill="none" stroke="currentColor" stroke-width="1.8" vector-effect="non-scaling-stroke" />
-		</svg>
+		<div class="spark"><Candles candles={candlesOf(b.st)} height={44} slots={STOCK_HISTORY - 1} /></div>
 		<small class="since {dir(total)}">sejak awal {fmtPct(total)}</small>
 	</div>
 {/snippet}
@@ -83,8 +76,9 @@
 	{:else}
 		<section>
 			<h4>Saham</h4>
-			<p class="sum">
-				Saldo <strong>{formatRp(me.money)}</strong> · Nilai saham <strong>{formatRp(stockTotal)}</strong>
+			<p class="sum saldo">
+				<span>Saldo <strong>{formatRp(me.money)}</strong> · Nilai saham <strong>{formatRp(stockTotal)}</strong></span>
+				{#if playing}<SogokModal {game} {meId} {onAction} />{/if}
 			</p>
 			{#if playing}
 				<button class="btn primary" onclick={() => (showBuy = true)}>📈 Beli saham</button>
@@ -244,6 +238,12 @@
 		letter-spacing: 0.05em;
 		color: var(--ink-soft);
 	}
+	.saldo {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.4rem;
+	}
 	.sum,
 	.note,
 	.hold,
@@ -306,7 +306,6 @@
 	}
 	.spark {
 		flex: 1;
-		height: 28px;
 		min-width: 0;
 	}
 	.since {

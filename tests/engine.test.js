@@ -108,7 +108,7 @@ test('sewa dobel saat kuasai grup, dan sewa Rumah OKB', () => {
 	assert.equal(rentFor(s, 1), 2);
 	s.tiles[3] = { owner, level: 0, mortgaged: false };
 	assert.equal(rentFor(s, 1), 4);
-	s.players[0].money = 10000;
+	s.players[0].money = 5000;
 	for (let i = 0; i < OKB_LEVEL; i++) {
 		applyAction(s, owner, { type: 'build', tile: 1 });
 		applyAction(s, owner, { type: 'build', tile: 3 });
@@ -123,7 +123,7 @@ test('Kebun Sawit hanya di daerah sawit (Medan, Makassar, Balikpapan)', () => {
 	const owner = s.players[0].id;
 	const idx = ['Medan', 'Makassar', 'Balikpapan'].map((n) => TILES.findIndex((t) => t.name === n));
 	for (const i of idx) s.tiles[i] = { owner, level: 0, mortgaged: false };
-	s.players[0].money = 100000;
+	s.players[0].money = 5000;
 	for (let i = 0; i < MAX_LEVEL; i++) for (const t of idx) applyAction(s, owner, { type: 'build', tile: t });
 	for (const t of idx) assert.equal(s.tiles[t].level, MAX_LEVEL);
 	assert.throws(() => applyAction(s, owner, { type: 'build', tile: idx[0] }), /Sawit, mentok/);
@@ -134,7 +134,7 @@ test('kota non-sawit tidak menghalangi bangun merata di grup', () => {
 	const owner = s.players[0].id;
 	const idx = ['Denpasar', 'Labuan Bajo', 'Raja Ampat'].map((n) => TILES.findIndex((t) => t.name === n));
 	for (const i of idx) s.tiles[i] = { owner, level: 0, mortgaged: false };
-	s.players[0].money = 100000;
+	s.players[0].money = 5000;
 	for (let i = 0; i < OKB_LEVEL; i++) for (const t of idx) applyAction(s, owner, { type: 'build', tile: t });
 	applyAction(s, owner, { type: 'build', tile: idx[2] }); // Raja Ampat -> Sawit
 	assert.equal(s.tiles[idx[2]].level, MAX_LEVEL);
@@ -428,6 +428,43 @@ test('sogok aparat: saldo >= 2 M paksa beli aset; ketahuan KPK masuk penjara', (
 	applyAction(s, cur.id, { type: 'sogokPaksa', tile: 3 }, () => 0.1); // ketahuan
 	assert.equal(s.tiles[3].owner, other.id);
 	assert.equal(cur.inJail, true);
+});
+
+test('kekayaan bersih tembus 10 M -> otomatis menang', () => {
+	const s = newGame(2, seeded(3));
+	const [a, b] = s.players;
+	a.money = 9999;
+	applyAction(s, b.id, { type: 'judol', amount: 1 }, () => 0.5);
+	assert.equal(s.status, 'playing');
+	b.money = 9999;
+	a.money = 10001;
+	applyAction(s, b.id, { type: 'judol', amount: 1 }, () => 0.5);
+	assert.equal(s.status, 'ended');
+	assert.equal(s.winner, a.id);
+});
+
+test('judol: candle konsisten dengan hasil (buy untung kalau naik, sell untung kalau turun)', () => {
+	for (const seed of [1, 2, 3, 4, 5, 6]) {
+		const s = newGame(2, seeded(seed));
+		applyAction(s, s.players[0].id, { type: 'judol', amount: 10 }, seeded(seed * 7));
+		const j = s.lastJudol;
+		assert.ok(j.side === 'buy' || j.side === 'sell');
+		assert.equal(j.candles.length, 14);
+		assert.equal(j.candles[0].o, j.entry);
+		assert.equal(j.candles.at(-1).c, j.exit);
+		if (j.pct !== 0) assert.equal(j.exit > j.entry, (j.side === 'buy') === j.pct > 0);
+		for (const c of j.candles) assert.ok(c.h >= Math.max(c.o, c.c) && c.l <= Math.min(c.o, c.c));
+	}
+});
+
+test('saham: tiap giliran menambah candle OHLC yang valid', () => {
+	const s = newGame(2, seeded(8));
+	for (let i = 0; i < 5; i++) botTurn(s, seeded(i));
+	for (const st of Object.values(s.stocks)) {
+		assert.ok(st.candles.length >= 1);
+		for (const c of st.candles) assert.ok(c.h >= Math.max(c.o, c.c) && c.l <= Math.min(c.o, c.c) && c.l >= 1);
+		assert.equal(st.candles.at(-1).c, st.price);
+	}
 });
 
 test('kartu Pemutihan bisa dijual di Pasar dan pindah ke pembeli', () => {
