@@ -33,15 +33,25 @@
 	<title>Jadi WNI — Monopoli kehidupan</title>
 </svelte:head>
 
+<div class="ticker" aria-hidden="true">
+	<div class="track">
+		{#each [0, 1] as _}
+			<span>🎲 Lempar dadu</span><span>🏠 Beli kota</span><span>💸 Bayar cicilan</span><span>📈 Main saham</span><span>🎰 Judol</span><span>🚔 Sogok aparat</span><span>💬 Netizen +62</span><span>👑 Kaya 10 M menang</span>
+		{/each}
+	</div>
+</div>
+
 <main>
 	<section class="hero">
+		<p class="badge">🇮🇩 Monopoli online · 2–6 pemain</p>
 		<div class="ktp" aria-label="Kartu identitas permainan">
 			<div class="ktp-head">
 				<span>PROVINSI SERBA ADA</span>
 				<span>KABUPATEN GAJIAN</span>
 			</div>
 			<div class="ktp-body">
-				<h1>Jadi WNI</h1>
+				<span class="nik">NIK 3201 0000 0000 0001</span>
+				<h1>Jadi <em>WNI</em></h1>
 				<dl>
 					<dt>Pekerjaan</dt>
 					<dd>Lempar dadu, bayar cicilan</dd>
@@ -50,16 +60,24 @@
 					<dt>Berlaku</dt>
 					<dd>Sampai bangkrut</dd>
 				</dl>
-				<div class="photo" aria-hidden="true">🛵</div>
+				<div class="photo" aria-hidden="true"><span>🛵</span></div>
 			</div>
+			<div class="dice" aria-hidden="true"><i>⚀</i><i>⚃</i></div>
 		</div>
 		<p class="lede">
-			Monopoli online untuk 2–6 orang. Beli kota, kena Musibah, dapat Takdir, bangun rumah, dan
-			jangan sampai saldo minus.
+			Beli kota, kena <b>Musibah</b>, dapat <b>Takdir</b>, bangun rumah, dan jangan sampai saldo
+			minus. Hidup itu keras, untung ada teman.
 		</p>
+		<ul class="chips" aria-label="Fitur">
+			<li>📈 Saham</li>
+			<li>🎰 Judol</li>
+			<li>🚔 Sogok aparat</li>
+			<li>💬 Netizen</li>
+		</ul>
 	</section>
 
 	<section class="panel">
+		<h2>Siap jadi sultan?</h2>
 		{#if data.user}
 			<div class="who">
 				{#if data.user.avatar}<img src={data.user.avatar} alt="" referrerpolicy="no-referrer" />{/if}
@@ -70,13 +88,14 @@
 				<a class="btn primary big" href={next}>Lanjut ke room undangan</a>
 			{/if}
 			<button class="btn primary big" onclick={createRoom} disabled={busy}>
-				{busy ? 'Membuat room…' : 'Buat room baru'}
+				{busy ? 'Membuat room…' : '🎲 Buat room baru'}
 			</button>
+			<div class="or"><span>atau</span></div>
 			<form class="join" onsubmit={joinRoom}>
 				<label for="code">Punya kode undangan?</label>
 				<div class="row">
 					<input id="code" bind:value={joinCode} placeholder="ABC123" maxlength="6" autocomplete="off" />
-					<button class="btn">Gabung</button>
+					<button class="btn yellow">Gabung</button>
 				</div>
 			</form>
 		{:else}
@@ -103,9 +122,15 @@
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
 	</section>
 
+	<section class="steps" aria-label="Cara main">
+		<div><b>1</b><span>Buat room & kirim link ke teman</span></div>
+		<div><b>2</b><span>Lempar dadu, beli kota, bangun rumah</span></div>
+		<div><b>3</b><span>Capai kekayaan Rp 10 M sebelum bangkrut</span></div>
+	</section>
+
 	<section class="levels" aria-label="Level rumah">
 		{#each HOUSE_LEVELS.slice(1) as lvl, i}
-			<div class="lvl" style:--h={`${40 + i * 18}px`}>
+			<div class="lvl" style:--h={`${40 + i * 18}px`} style:--d={`${i * 0.4}s`}>
 				<span class="ico">{lvl.icon}</span>
 				<span>{lvl.name}</span>
 			</div>
@@ -114,10 +139,30 @@
 </main>
 
 <style>
+	.ticker {
+		background: var(--ink);
+		color: var(--angkot);
+		overflow: hidden;
+		white-space: nowrap;
+		font-weight: 700;
+		font-size: 0.9rem;
+		border-bottom: 3px solid var(--merah);
+	}
+	.track {
+		display: inline-flex;
+		gap: 2.5rem;
+		padding: 0.5rem 1.25rem;
+		animation: scroll 40s linear infinite;
+	}
+	@keyframes scroll {
+		to {
+			transform: translateX(-50%);
+		}
+	}
 	main {
-		max-width: 980px;
+		max-width: 1020px;
 		margin: 0 auto;
-		padding: 3rem 1rem 4rem;
+		padding: 2.5rem 1rem 4rem;
 		display: grid;
 		grid-template-columns: 1.3fr 1fr;
 		gap: 2.5rem;
@@ -125,15 +170,33 @@
 	}
 	.hero {
 		display: grid;
-		gap: 1.5rem;
+		gap: 1.4rem;
+	}
+	.badge {
+		justify-self: start;
+		margin: 0;
+		background: var(--angkot);
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		padding: 0.25rem 0.8rem;
+		font-weight: 700;
+		font-size: 0.85rem;
+		box-shadow: 0 3px 0 var(--ink);
 	}
 	.ktp {
-		background: linear-gradient(160deg, #e9f6f9, #b7dce5 70%, #a6d1dc);
+		position: relative;
+		background:
+			radial-gradient(circle at 85% 20%, rgba(255, 255, 255, 0.6), transparent 40%),
+			repeating-linear-gradient(115deg, transparent 0 14px, rgba(20, 33, 61, 0.04) 14px 15px),
+			linear-gradient(160deg, #e9f6f9, #b7dce5 70%, #a6d1dc);
 		border: 2px solid var(--ink);
 		border-radius: 18px;
 		box-shadow: 8px 8px 0 var(--ink);
-		overflow: hidden;
 		transform: rotate(-1.5deg);
+		transition: transform 0.25s;
+	}
+	.ktp:hover {
+		transform: rotate(0.5deg) translateY(-4px);
 	}
 	.ktp-head {
 		display: flex;
@@ -144,20 +207,35 @@
 		letter-spacing: 0.04em;
 		background: var(--merah);
 		color: #fff;
+		border-radius: 16px 16px 0 0;
 	}
 	.ktp-body {
 		display: grid;
 		grid-template-columns: 1fr auto;
 		gap: 0.5rem 1rem;
-		padding: 1rem 1.25rem 1.4rem;
+		padding: 0.8rem 1.25rem 1.4rem;
+	}
+	.nik {
+		grid-column: 1 / -1;
+		font-family: 'JetBrains Mono', monospace;
+		font-weight: 700;
+		font-size: 0.8rem;
+		color: var(--ink-soft);
+		letter-spacing: 0.08em;
 	}
 	h1 {
 		grid-column: 1 / -1;
-		margin: 0;
-		font-size: clamp(3rem, 9vw, 5.5rem);
+		margin: 0 0 0.4rem;
+		font-size: clamp(3.2rem, 10vw, 6rem);
 		line-height: 0.9;
 		font-weight: 800;
 		letter-spacing: -0.03em;
+		text-shadow: 3px 3px 0 rgba(255, 255, 255, 0.7);
+	}
+	h1 em {
+		font-style: normal;
+		color: var(--merah);
+		text-shadow: 3px 3px 0 var(--ink);
 	}
 	dl {
 		margin: 0;
@@ -180,31 +258,120 @@
 		width: 92px;
 		height: 116px;
 		border: 2px solid var(--ink);
-		background: var(--merah);
+		background: linear-gradient(180deg, var(--merah) 50%, #fff 50%);
 		display: grid;
 		place-items: center;
-		font-size: 3rem;
 		border-radius: 4px;
 		align-self: end;
+		overflow: hidden;
+	}
+	.photo span {
+		font-size: 3rem;
+		animation: ride 2.4s ease-in-out infinite;
+	}
+	@keyframes ride {
+		50% {
+			transform: translateX(10px) rotate(4deg);
+		}
+	}
+	.dice {
+		position: absolute;
+		right: -14px;
+		bottom: -26px;
+		display: flex;
+		gap: 4px;
+		font-size: 3.4rem;
+		line-height: 1;
+		filter: drop-shadow(3px 3px 0 var(--ink));
+	}
+	.dice i {
+		font-style: normal;
+		background: #fff;
+		border: 2px solid var(--ink);
+		border-radius: 10px;
+		padding: 0 0.1em;
+		animation: tumble 3.2s ease-in-out infinite;
+	}
+	.dice i:last-child {
+		animation-delay: 0.6s;
+	}
+	@keyframes tumble {
+		0%,
+		60%,
+		100% {
+			transform: rotate(0);
+		}
+		75% {
+			transform: translateY(-14px) rotate(180deg);
+		}
+		90% {
+			transform: rotate(350deg);
+		}
 	}
 	.lede {
 		font-size: 1.2rem;
 		line-height: 1.45;
 		max-width: 46ch;
+		margin: 0.6rem 0 0;
+	}
+	.chips {
+		list-style: none;
 		margin: 0;
+		padding: 0;
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem;
+	}
+	.chips li {
+		background: var(--paper);
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		padding: 0.25rem 0.8rem;
+		font-weight: 700;
+		font-size: 0.9rem;
 	}
 	.panel {
 		background: var(--paper);
 		border: 2px solid var(--ink);
 		border-radius: var(--radius-m);
+		box-shadow: 6px 6px 0 var(--ink);
 		padding: 1.5rem;
 		display: grid;
 		gap: 1rem;
-		margin-top: 1rem;
+		margin-top: 2.6rem;
+		position: relative;
+	}
+	.panel::before {
+		content: '';
+		position: absolute;
+		inset: 0 0 auto;
+		height: 10px;
+		background: repeating-linear-gradient(90deg, var(--merah) 0 20px, #fff 20px 40px);
+		border-bottom: 2px solid var(--ink);
+		border-radius: 10px 10px 0 0;
+	}
+	h2 {
+		margin: 0.5rem 0 0;
+		font-size: 1.6rem;
+		letter-spacing: -0.02em;
 	}
 	.big {
 		padding: 0.85rem 1.2rem;
 		font-size: 1.1rem;
+	}
+	.or {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
+		color: var(--ink-soft);
+		font-size: 0.85rem;
+		font-weight: 700;
+	}
+	.or::before,
+	.or::after {
+		content: '';
+		flex: 1;
+		border-top: 2px dashed var(--line);
 	}
 	.who {
 		display: flex;
@@ -243,9 +410,14 @@
 		flex: 1;
 		min-width: 0;
 		text-transform: uppercase;
+		font-family: 'JetBrains Mono', monospace;
+		font-weight: 700;
+		letter-spacing: 0.15em;
 	}
 	#name {
 		text-transform: none;
+		font-family: inherit;
+		letter-spacing: normal;
 	}
 	.invite {
 		margin: 0;
@@ -259,6 +431,34 @@
 		margin: 0;
 		color: var(--merah-deep);
 		font-weight: 600;
+	}
+	.steps {
+		grid-column: 1 / -1;
+		display: grid;
+		grid-template-columns: repeat(3, 1fr);
+		gap: 1rem;
+	}
+	.steps div {
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		background: var(--paper);
+		border: 2px solid var(--ink);
+		border-radius: var(--radius-m);
+		padding: 0.8rem 1rem;
+		font-weight: 600;
+		line-height: 1.3;
+	}
+	.steps b {
+		flex: none;
+		width: 2.2rem;
+		height: 2.2rem;
+		display: grid;
+		place-items: center;
+		background: var(--angkot);
+		border: 2px solid var(--ink);
+		border-radius: 50%;
+		font-size: 1.1rem;
 	}
 	.levels {
 		grid-column: 1 / -1;
@@ -276,6 +476,12 @@
 		font-weight: 700;
 		font-size: 0.9rem;
 		white-space: nowrap;
+		animation: bob 3s ease-in-out infinite var(--d);
+	}
+	@keyframes bob {
+		50% {
+			transform: translateY(-6px);
+		}
 	}
 	.ico {
 		font-size: var(--h);
@@ -286,8 +492,19 @@
 			grid-template-columns: 1fr;
 			padding-top: 1.5rem;
 		}
-		.ktp {
+		.panel {
+			margin-top: 0;
+		}
+		.steps {
+			grid-template-columns: 1fr;
+		}
+		.ktp,
+		.ktp:hover {
 			transform: none;
+		}
+		.dice {
+			right: -6px;
+			font-size: 2.6rem;
 		}
 	}
 </style>
