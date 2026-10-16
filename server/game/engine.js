@@ -119,9 +119,12 @@ export function removePlayer(state, userId) {
 	if (idx < 0) return;
 	const [p] = state.players.splice(idx, 1);
 	log(state, `${p.name} keluar room.`);
+	// bot tidak ditinggal sendirian di room tanpa manusia, dan tidak jadi host
+	if (state.players.every((x) => x.bot)) state.players.length = 0;
 	if (state.hostId === userId && state.players.length) {
-		state.hostId = state.players[0].id;
-		log(state, `${state.players[0].name} sekarang jadi host.`);
+		const next = state.players.find((x) => !x.bot) ?? state.players[0];
+		state.hostId = next.id;
+		log(state, `${next.name} sekarang jadi host.`);
 	}
 }
 
@@ -475,7 +478,7 @@ export const KICK_TIMEOUT_MS = 45_000;
 const KICK_COOLDOWN_MS = 30_000;
 
 /** pemilih = pemain aktif selain yang akan dikeluarkan */
-export const kickVoters = (state) => alive(state).filter((p) => p.id !== state.kickVote?.target);
+export const kickVoters = (state) => alive(state).filter((p) => !p.bot && p.id !== state.kickVote?.target);
 export const kickNeeded = (state) => Math.ceil(kickVoters(state).length * KICK_RATIO - 1e-9);
 
 function kickTally(state) {

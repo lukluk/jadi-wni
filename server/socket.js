@@ -18,6 +18,7 @@ import { TOKENS } from '../src/lib/shared/board.js';
 import { refreshCityImages } from './cityImages.js';
 import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
+import { botStep, maybeAddBot } from './bot.js';
 import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -55,7 +56,10 @@ function getRoom(code) {
 const persist = (state) => saveRoom(state.code, state.hostId, state);
 
 function onlineIds(code) {
-	return [...(presence.get(code)?.entries() ?? [])].filter(([, n]) => n > 0).map(([id]) => id);
+	const ids = [...(presence.get(code)?.entries() ?? [])].filter(([, n]) => n > 0).map(([id]) => id);
+	// bot selalu dianggap online
+	const bots = rooms.get(code)?.players.filter((p) => p.bot).map((p) => p.id) ?? [];
+	return [...ids, ...bots];
 }
 
 function broadcast(io, state) {
@@ -97,7 +101,8 @@ export function attachSocket(httpServer) {
 	setInterval(() => {
 		for (const state of rooms.values()) {
 			try {
-				if (expireRent(state) || expireKick(state)) {
+				const hostHere = (presence.get(state.code)?.get(state.hostId) ?? 0) > 0;
+				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state)) {
 					persist(state);
 					broadcast(io, state);
 				}
@@ -111,7 +116,7 @@ export function attachSocket(httpServer) {
 	setInterval(() => {
 		for (const state of rooms.values()) {
 			try {
-				if (autopilotStep(state)) {
+				if (autopilotStep(state) || botStep(state)) {
 					persist(state);
 					broadcast(io, state);
 				}

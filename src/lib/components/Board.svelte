@@ -1,13 +1,13 @@
 <script>
 	import { untrack } from 'svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, richestId } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, richestId, canBuild } from '$lib/shared/board.js';
 	import Avatar from './Avatar.svelte';
 	import { play } from '$lib/sound.js';
 	import { onMount } from 'svelte';
 	import { tilePos, isCorner, makeLayout, cellRect } from '$lib/layout.js';
 
 	/** @type {{ game: any, images?: Record<string, any>, logos?: Record<string, any>, rolling?: boolean, moving?: boolean, onSalary?: (id:string)=>void, onTile: (i:number)=>void, center: import('svelte').Snippet, meId?: string|null }} */
-	let { game, images = {}, logos = {}, rolling = false, moving = $bindable(false), shown = $bindable({}), onSalary, onTile, center, meId = null } = $props();
+	let { game, images = {}, logos = {}, rolling = false, moving = $bindable(false), shown = $bindable({}), onSalary, onTile, onBuild, center, meId = null } = $props();
 
 	// landscape (layar lebar) -> papan melebar; HP portrait -> persegi
 	let landscape = $state(true);

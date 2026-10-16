@@ -39,6 +39,37 @@ export const investedCost = (houseCost, level) => {
 	return total;
 };
 
+/** semua petak properti dalam satu grup */
+export const groupTilesOf = (group) => TILES.filter((t) => t.type === 'property' && t.group === group);
+
+/** pemain menguasai semua kota di grup (tak ada yang digadai dihitung terpisah) */
+export const ownsGroup = (state, playerId, group) =>
+	!!group && groupTilesOf(group).every((t) => state.tiles[t.i]?.owner === playerId);
+
+/**
+ * Bisa bangun/upgrade di petak ini sekarang? Cermin aturan server (engine.build).
+ * @returns {{ level:number, next:number, name:string, icon:string, cost:number, afford:boolean }|null}
+ */
+export function canBuild(state, playerId, tileIdx) {
+	if (!state || state.status !== 'playing') return null;
+	const tile = TILES[tileIdx];
+	const own = state.tiles?.[tileIdx];
+	if (!tile || tile.type !== 'property' || !own) return null;
+	if (own.owner !== playerId || own.mortgaged) return null;
+	if (!ownsGroup(state, playerId, tile.group)) return null;
+	const gTiles = groupTilesOf(tile.group);
+	if (gTiles.some((t) => state.tiles[t.i]?.mortgaged)) return null;
+	const level = own.level ?? 0;
+	if (level >= maxLevelOf(tile)) return null;
+	// bangun merata: tak boleh lebih tinggi dari kota lain yang belum mentok
+	const open = gTiles.filter((t) => (state.tiles[t.i]?.level ?? 0) < maxLevelOf(t));
+	if (open.some((t) => (state.tiles[t.i]?.level ?? 0) < level)) return null;
+	const next = level + 1;
+	const cost = buildCost(GROUPS[tile.group].houseCost, next);
+	const player = state.players?.find((p) => p.id === playerId);
+	return { level, next, name: HOUSE_LEVELS[next].name, icon: HOUSE_LEVELS[next].icon, cost, afford: (player?.money ?? 0) >= cost };
+}
+
 export const GROUPS = {
 	coklat: { label: 'Pinggiran', color: '#8B5A2B', houseCost: 50 },
 	biru: { label: 'Penyangga', color: '#7CC6E8', houseCost: 50 },

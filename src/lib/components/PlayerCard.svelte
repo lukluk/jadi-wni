@@ -90,6 +90,7 @@
 			<span class="online" class:on={online} title={online ? 'Online' : 'Offline'}></span>
 			<strong>{p.name}</strong>
 			{#if isMe}<span class="tag">kamu</span>{/if}
+			{#if p.bot}<span class="tag">🤖 bot</span>{/if}
 			{#if isHost}<span class="tag">host</span>{/if}
 			{#if isHost && roomCode}<button class="code" onclick={onCopyCode} title="Kode room, klik untuk menyalin link undangan">{roomCode}</button>{/if}
 			{#if inVoice}<span class="mic" title="Ikut obrolan suara">{micMuted ? '🔇' : speaking ? '🔊' : '🎙️'}</span>{/if}
