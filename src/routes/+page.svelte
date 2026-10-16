@@ -55,7 +55,6 @@
 					<dt>Berlaku</dt>
 					<dd>Sampai rungkat</dd>
 				</dl>
-				<div class="photo" aria-hidden="true"><span>🛵</span></div>
 			</div>
 			<div class="dice" aria-hidden="true"><i>⚀</i><i>⚃</i></div>
 		</div>
@@ -187,7 +186,7 @@
 	}
 	.ktp-body {
 		display: grid;
-		grid-template-columns: 1fr auto;
+		grid-template-columns: 1fr;
 		gap: 0.5rem 1rem;
 		padding: 0.8rem 1.25rem 1.4rem;
 	}
@@ -229,26 +228,6 @@
 	dd {
 		margin: 0;
 		font-weight: 700;
-	}
-	.photo {
-		width: 92px;
-		height: 116px;
-		border: 2px solid var(--ink);
-		background: linear-gradient(180deg, var(--merah) 50%, #fff 50%);
-		display: grid;
-		place-items: center;
-		border-radius: 4px;
-		align-self: end;
-		overflow: hidden;
-	}
-	.photo span {
-		font-size: 3rem;
-		animation: ride 2.4s ease-in-out infinite;
-	}
-	@keyframes ride {
-		50% {
-			transform: translateX(10px) rotate(4deg);
-		}
 	}
 	.dice {
 		position: absolute;
