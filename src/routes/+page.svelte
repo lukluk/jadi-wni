@@ -66,7 +66,7 @@
 		<ul class="chips" aria-label="Fitur">
 			<li>📈 Saham</li>
 			<li>🎰 Judod</li>
-			<li>🚔 Sogok aparat</li>
+			<li>🚔 Sogok oknum aparat</li>
 			<li>💬 Netizen</li>
 		</ul>
 	</section>
