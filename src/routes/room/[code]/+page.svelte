@@ -11,6 +11,7 @@
 	import Netizen from '$lib/components/Netizen.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Market from '$lib/components/Market.svelte';
+	import SogokModal from '$lib/components/SogokModal.svelte';
 	import Portfolio from '$lib/components/Portfolio.svelte';
 	import {
 		TILES,
@@ -685,6 +686,9 @@
 									<button class="btn small" disabled={busy || myPlayer.money < 0} onclick={() => act({ type: 'endTurn' })}>
 										{countdown ? 'Lanjut sekarang' : 'Selesai giliran'}
 									</button>
+								{/if}
+								{#if (game.phase === 'roll' || game.phase === 'end') && !rolling && !moving}
+									<SogokModal {game} meId={me?.id} onAction={act} />
 								{/if}
 								{#if myPlayer.money < 0}
 									<button class="btn small" onclick={() => confirmAct('Yakin bangkrut? Semua asetmu disita bank.', { type: 'bankrupt' })}>Nyatakan bangkrut</button>

@@ -1,5 +1,5 @@
 <script>
-	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, formatRp, SOGOK_MIN_MONEY, SOGOK_RISK, sogokPrice, sogokFee } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, formatRp } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -48,33 +48,11 @@
 	const betN = $derived(Math.max(0, Math.floor(Number(bet)) || 0));
 	const fraction = (f) => (bet = Math.max(1, Math.floor((me?.money ?? 0) * f)));
 
-	// sogok aparat: paksa pemilik jual aset (butuh saldo >= 2 M, sekali per giliran)
-	const sogokOpen = $derived(!!me && me.money >= SOGOK_MIN_MONEY);
-	const myTurn = $derived(game.players[game.turn]?.id === meId);
-	const sogokReady = $derived(
-		sogokOpen && myTurn && (game.phase === 'roll' || game.phase === 'end') && !me?.inJail && me?.sogokTurn !== game.turnCount
-	);
-	const targets = $derived(
-		Object.entries(game.tiles)
-			.filter(([, t]) => t.owner !== meId && !game.players.find((p) => p.id === t.owner)?.bankrupt)
-			.map(([i, t]) => {
-				const price = sogokPrice(game, +i);
-				return { tile: TILES[+i], own: t, price, fee: sogokFee(price), owner: game.players.find((p) => p.id === t.owner) };
-			})
-			.sort((a, b) => a.tile.i - b.tile.i)
-	);
-
 	// popup daftar saham untuk beli
 	let showBuy = $state(false);
 	let dialog = $state();
 	$effect(() => {
 		if (showBuy) dialog?.showModal();
-	});
-
-	let showSogok = $state(false);
-	let sogokDialog = $state();
-	$effect(() => {
-		if (showSogok) sogokDialog?.showModal();
 	});
 </script>
 
@@ -167,12 +145,6 @@
 			</section>
 		{/if}
 
-		{#if playing}
-			<button class="btn sogok-btn" onclick={() => (showSogok = true)}>
-				🕴️ Sogok Aparat{#if !sogokOpen} <small>🔒 butuh {formatRp(SOGOK_MIN_MONEY)}</small>{/if}
-			</button>
-		{/if}
-
 		<section>
 			<h4>Aset ({owned.length + (me.jailFree > 0 ? 1 : 0)})</h4>
 			{#if me.jailFree > 0}
@@ -255,41 +227,6 @@
 	</dialog>
 {/if}
 
-{#if showSogok && me}
-	<dialog bind:this={sogokDialog} onclose={() => (showSogok = false)} onclick={(e) => e.target === sogokDialog && sogokDialog.close()}>
-		<div class="sheet">
-			<h3>🕴️ Sogok Aparat</h3>
-			<p class="note">
-				Saldo ≥ {formatRp(SOGOK_MIN_MONEY)} → paksa pemilik jual asetnya di harga asli (petak + bangunan) ditambah uang sogok {formatRp(sogokFee())} ke Kas Negara.
-				Risiko {Math.round(SOGOK_RISK * 100)}% ketahuan KPK: sogok hangus &amp; masuk Ruang Sidang. Sekali per giliran, saat gilirmu.
-			</p>
-			{#if !sogokOpen}
-				<p class="note"><b>🔒 Terkunci</b> — saldomu {formatRp(me.money)}, butuh {formatRp(SOGOK_MIN_MONEY)}.</p>
-			{/if}
-			{#each targets as t (t.tile.i)}
-				<div class="target">
-					<span class="tn">
-						{#if t.tile.group}<i class="band" style:background={GROUPS[t.tile.group].color}></i>{/if}
-						{t.tile.name} <small>· {t.owner?.name}</small>
-					</span>
-					<button
-						class="btn small danger-btn"
-						disabled={!sogokReady || me.money < t.price + t.fee}
-						onclick={() => {
-							onAction({ type: 'sogokPaksa', tile: t.tile.i });
-							sogokDialog.close();
-						}}
-					>
-						{formatRp(t.price + t.fee)}
-					</button>
-				</div>
-			{:else}
-				<p class="empty">Belum ada aset milik pemain lain.</p>
-			{/each}
-			<button class="close" onclick={() => sogokDialog.close()} aria-label="Tutup">✕</button>
-		</div>
-	</dialog>
-{/if}
 
 <style>
 	.pf {
@@ -413,29 +350,6 @@
 		border-radius: 10px;
 		padding: 0.5rem 0.6rem;
 		background: #fff3f0;
-	}
-	.sogok-btn {
-		background: #f3f0ff;
-		border: 2px dashed var(--ink);
-		border-radius: 10px;
-		padding: 0.5rem 0.6rem;
-		font-weight: 800;
-		cursor: pointer;
-	}
-	.target {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.4rem;
-		padding: 0.2rem 0;
-		font-size: 0.85rem;
-	}
-	.target .band {
-		display: inline-block;
-		width: 0.6rem;
-		height: 0.6rem;
-		border-radius: 2px;
-		margin-right: 0.25rem;
 	}
 	.danger-btn {
 		background: var(--merah);
