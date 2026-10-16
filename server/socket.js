@@ -9,6 +9,8 @@ import {
 	startGame,
 	applyAction,
 	forceSkip,
+	expireRent,
+	expireKick,
 	publicState,
 	GameError
 } from './game/engine.js';
@@ -52,8 +54,15 @@ function onlineIds(code) {
 }
 
 function broadcast(io, state) {
-	io.to(state.code).emit('room:state', { ...publicState(state), online: onlineIds(state.code) });
+	io.to(state.code).emit('room:state', { ...publicState(state), online: onlineIds(state.code), now: Date.now() });
 }
+
+const voiceRoom = (code) => `voice:${code}`;
+function voiceMembers(io, code) {
+	const ids = [...(io.sockets.adapter.rooms.get(voiceRoom(code)) ?? [])].map((sid) => io.sockets.sockets.get(sid)?.data.user.id);
+	return [...new Set(ids.filter(Boolean))];
+}
+const emitVoice = (io, code) => io.to(code).emit('voice:members', voiceMembers(io, code));
 
 function errMsg(e) {
 	if (e instanceof GameError) return e.message;
@@ -65,6 +74,20 @@ function errMsg(e) {
 export function attachSocket(httpServer) {
 	const io = new Server(httpServer, { path: '/socket.io' });
 	refreshCityImages();
+
+	// batas waktu tagihan sewa: habis = menyerah
+	setInterval(() => {
+		for (const state of rooms.values()) {
+			try {
+				if (expireRent(state) || expireKick(state)) {
+					persist(state);
+					broadcast(io, state);
+				}
+			} catch (e) {
+				console.error(e);
+			}
+		}
+	}, 1000).unref?.();
 
 	io.use((socket, next) => {
 		const cookies = parseCookie(socket.handshake.headers.cookie ?? '');
@@ -79,7 +102,19 @@ export function attachSocket(httpServer) {
 		/** @type {string|null} */
 		let joined = null;
 
+		/** @type {string|null} room tempat socket ini ikut obrolan suara (WebRTC mesh; server hanya relay sinyal) */
+		let inVoice = null;
+		const leaveVoice = () => {
+			if (!inVoice) return;
+			const code = inVoice;
+			inVoice = null;
+			socket.leave(voiceRoom(code));
+			socket.to(voiceRoom(code)).emit('voice:peer-left', { sid: socket.id });
+			emitVoice(io, code);
+		};
+
 		const leaveCurrent = () => {
+			leaveVoice();
 			if (!joined) return;
 			const code = joined;
 			socket.leave(code);
@@ -184,6 +219,14 @@ export function attachSocket(httpServer) {
 			}, ack)
 		);
 
+		// hitung mundur akhir giliran dari pemain yang sedang giliran, diteruskan ke yang lain (tidak dipersist)
+		socket.on('turn:countdown', (n) => {
+			const state = joined && rooms.get(joined);
+			if (!state || state.status !== 'playing' || state.players[state.turn]?.id !== user.id) return;
+			const v = n == null ? null : Math.min(3, Math.max(0, Math.floor(Number(n)) || 0));
+			socket.to(joined).emit('turn:countdown', { id: user.id, n: v });
+		});
+
 		socket.on('game:action', (action, ack) =>
 			mutate((state) => applyAction(state, user.id, action), ack)
 		);
@@ -208,6 +251,33 @@ export function attachSocket(httpServer) {
 			chats.set(joined, list);
 			io.to(joined).emit('chat', msg);
 		});
+
+		socket.on('voice:join', (_p, ack) => {
+			const state = joined && rooms.get(joined);
+			if (!state) return ack?.({ ok: false, error: 'Belum masuk room.' });
+			if (!state.players.some((p) => p.id === user.id)) return ack?.({ ok: false, error: 'Hanya pemain yang bisa ikut suara.' });
+			leaveVoice();
+			const code = state.code;
+			const peers = [...(io.sockets.adapter.rooms.get(voiceRoom(code)) ?? [])].map((sid) => ({
+				sid,
+				userId: io.sockets.sockets.get(sid)?.data.user.id
+			}));
+			socket.join(voiceRoom(code));
+			inVoice = code;
+			ack?.({ ok: true, peers });
+			emitVoice(io, code);
+		});
+
+		// relay offer/answer/ICE antar peer di room suara yang sama
+		socket.on('voice:signal', (msg) => {
+			const to = msg?.to;
+			if (!inVoice || typeof to !== 'string' || to === socket.id) return;
+			if (!io.sockets.adapter.rooms.get(voiceRoom(inVoice))?.has(to)) return;
+			io.to(to).emit('voice:signal', { from: socket.id, userId: user.id, data: msg.data });
+		});
+
+		socket.on('voice:leave', leaveVoice);
+		socket.on('voice:query', (_p, ack) => ack?.({ members: joined ? voiceMembers(io, joined) : [] }));
 
 		socket.on('disconnect', leaveCurrent);
 	});

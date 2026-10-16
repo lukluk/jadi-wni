@@ -6,13 +6,23 @@
 	import Board from '$lib/components/Board.svelte';
 	import TileSheet from '$lib/components/TileSheet.svelte';
 	import PlayerCard from '$lib/components/PlayerCard.svelte';
+	import { play, isMuted, setMuted } from '$lib/sound.js';
+	import Voice from '$lib/components/Voice.svelte';
+	import Avatar from '$lib/components/Avatar.svelte';
+	import Market from '$lib/components/Market.svelte';
+	import Portfolio from '$lib/components/Portfolio.svelte';
 	import {
 		TILES,
-		TOKENS,
+		GROUPS,
+		listingTile,
+		HOUSE_LEVELS,
 		JAIL_FINE,
 		MIN_PLAYERS,
 		MAX_PLAYERS,
-		formatRp
+		formatRp,
+		formatAmt,
+		salaryFor,
+		calendarDate
 	} from '$lib/shared/board.js';
 
 	let { data } = $props();
@@ -31,9 +41,175 @@
 	let busy = $state(false);
 	let connected = $state(true);
 	let card = $state(/** @type {any} */ (null));
+	let pendingCard = $state(/** @type {any} */ (null));
+	let moving = $state(false);
+	let speaking = $state(/** @type {Record<string, boolean>} */ ({}));
+	let voiceMembers = $state(/** @type {string[]} */ ([]));
+	let shown = $state(/** @type {Record<string, number>} */ ({}));
+
+	// kalender pribadi: GAJIAN tiap tanggal 25, tanggal mengikuti posisi bidak yang terlihat
+	const calBase = $derived(game?.calBase ?? { y: new Date().getFullYear(), m: new Date().getMonth() });
+	const calDate = $derived.by(() => {
+		const mp = game?.players.find((x) => x.id === me?.id);
+		if (!mp) return null;
+		const pos = shown[mp.id] ?? mp.pos;
+		// laps sudah naik di server saat bidak melewati GAJIAN; tahan sampai bidak yang tampil ikut menyeberang
+		const crossing = pos > mp.pos && pos - mp.pos < 20 ? 1 : 0;
+		return calendarDate(calBase, (mp.laps ?? 0) - crossing, pos);
+	});
+	const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+	const DAYS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
+	const toGajian = $derived.by(() => {
+		if (!calDate) return 0;
+		const d = calDate.getUTCDate();
+		if (d === 25) return 0;
+		const next = Date.UTC(calDate.getUTCFullYear(), calDate.getUTCMonth() + (d > 25 ? 1 : 0), 25);
+		return Math.round((next - calDate.getTime()) / 86400000);
+	});
+
+	// bidak lewat GAJIAN: PlayerCard menganimasikan gaji masuk selagi bidak berhenti
+	let salary = $state(/** @type {{id:string, amount:number, n:number}|null} */ (null));
+	let salaryN = 0;
+	function onSalary(id) {
+		play('salary');
+		salary = { id, amount: salaryFor(game.tiles, id).amount, n: ++salaryN };
+	}
+
+	const CARD_DELAY_MS = 600;
+	const MONEY_AFTER_CARD_MS = 1200;
+
+	// saldo pemain baru berubah (dengan animasi) setelah bidak sampai dan kartu terlihat sebentar
+	let cardFresh = $state(false);
+
+	// judol: hasil diundi dulu ~1,4 dtk (angka berputar) baru saldo berubah
+	let judol = $state(/** @type {any} */ (null));
+	let judolFace = $state(0);
+	let lastJudolSeq = -1;
+	let judolTimers = [];
+	function startJudol(j) {
+		judolTimers.forEach(clearTimeout);
+		judolTimers.forEach(clearInterval);
+		judol = { ...j, done: false };
+		play('dice');
+		const iv = setInterval(() => (judolFace = Math.round(Math.random() * 200 - 100)), 70);
+		judolTimers = [
+			iv,
+			setTimeout(() => {
+				clearInterval(iv);
+				judol = { ...j, done: true };
+				play(j.delta > 0 ? 'good' : j.delta < 0 ? 'bad' : 'notif');
+			}, 1400),
+			setTimeout(() => (judol = null), 4200)
+		];
+	}
+	let freshTimer;
+	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh || (!!judol && !judol.done));
+
+	// kartu baru muncul setelah dadu berhenti dan bidak sampai
+	$effect(() => {
+		if (!pendingCard || rolling || moving) return;
+		const t = setTimeout(() => {
+			card = pendingCard;
+			play(pendingCard.deck === 'musibah' ? 'bad' : pendingCard.deck === 'tax' ? 'tax' : 'good');
+			pendingCard = null;
+			cardFresh = true;
+			clearTimeout(freshTimer);
+			freshTimer = setTimeout(() => (cardFresh = false), MONEY_AFTER_CARD_MS);
+		}, CARD_DELAY_MS);
+		return () => clearTimeout(t);
+	});
 	let lastCardSeq = -1;
 	let logEl = $state();
 	let cityImages = $state(/** @type {Record<string, any>} */ ({}));
+	let rolling = $state(false);
+	let faces = $state([1, 1]);
+	let lastRollSeq = -1;
+	let rollTimer;
+	let faceTimer;
+
+	const ROLL_MS = 800;
+
+	// ---- kabar Pasar: popup notif (fade otomatis), titik di tab, animasi kartu pindah tangan ----
+	let notifs = $state(/** @type {{id:number,msg:string,kind:string,tile:number|null}[]}*/ ([]));
+	let notifId = 0;
+	let mkUnseen = $state(0);
+	let lastMkSeq = -1;
+	let flight = $state(/** @type {any} */ (null));
+
+	function pushNotif(msg, kind, tile = null) {
+		const id = ++notifId;
+		notifs = [...notifs, { id, msg, kind, tile }].slice(-3);
+		setTimeout(() => (notifs = notifs.filter((n) => n.id !== id)), 4200);
+	}
+
+	function onMarketEvent(ev, st) {
+		const who = (id) => st.players.find((p) => p.id === id)?.name ?? 'Pemain';
+		const t = listingTile(ev.tile).name;
+		const mine = me?.id;
+		let msg = '';
+		let attention = false;
+		if (ev.kind === 'list' || ev.kind === 'reprice') {
+			if (ev.actor === mine) return;
+			msg = `🏷️ ${who(ev.actor)} ${ev.kind === 'list' ? 'jual' : 'ubah harga'} ${t} · ${formatRp(ev.price)}`;
+			attention = true;
+		} else if (ev.kind === 'offer') {
+			if (ev.target !== mine) return;
+			msg = `💬 ${who(ev.actor)} menawar ${t} · ${formatRp(ev.price)}`;
+			attention = true;
+		} else if (ev.kind === 'reject') {
+			if (ev.target !== mine) return;
+			msg = `❌ ${who(ev.actor)} menolak tawaranmu untuk ${t}`;
+			attention = true;
+		} else if (ev.kind === 'sold') {
+			msg = `🤝 ${who(ev.to)} beli ${t} dari ${who(ev.from)} · ${formatRp(ev.price)}`;
+			attention = ev.from === mine || ev.to === mine;
+			const n = ++notifId;
+			flight = { ...ev, n };
+			setTimeout(() => flight?.n === n && (flight = null), 1900);
+		}
+		if (!msg) return;
+		play(ev.kind === 'sold' ? 'sold' : ev.kind === 'offer' ? 'offer' : ev.kind === 'reject' ? 'reject' : 'notif');
+		pushNotif(msg, ev.kind);
+		if (attention && tab !== 'market') mkUnseen += 1;
+	}
+
+	/** kartu terbang dari kartu penjual ke kartu pembeli */
+	function fly(node, f) {
+		const a = document.querySelector(`[data-pid="${CSS.escape(f.from)}"]`)?.getBoundingClientRect();
+		const b = document.querySelector(`[data-pid="${CSS.escape(f.to)}"]`)?.getBoundingClientRect();
+		const w = node.offsetWidth;
+		const h = node.offsetHeight;
+		const mid = (r) => (r ? [r.left + r.width / 2 - w / 2, r.top + r.height / 2 - h / 2] : [innerWidth / 2 - w / 2, innerHeight / 2 - h / 2]);
+		const [x0, y0] = mid(a);
+		const [x1, y1] = mid(b);
+		node.style.left = '0px';
+		node.style.top = '0px';
+		const anim = node.animate(
+			[
+				{ transform: `translate(${x0}px,${y0}px) scale(.6) rotate(-6deg)`, opacity: 0 },
+				{ transform: `translate(${x0}px,${y0}px) scale(1.05) rotate(-3deg)`, opacity: 1, offset: 0.2 },
+				{ transform: `translate(${(x0 + x1) / 2}px,${(y0 + y1) / 2 - 60}px) scale(1.15) rotate(3deg)`, opacity: 1, offset: 0.55 },
+				{ transform: `translate(${x1}px,${y1}px) scale(.9) rotate(0deg)`, opacity: 1, offset: 0.88 },
+				{ transform: `translate(${x1}px,${y1}px) scale(.5)`, opacity: 0 }
+			],
+			{ duration: 1700, easing: 'cubic-bezier(.4,.1,.3,1)', fill: 'forwards' }
+		);
+		return { destroy: () => anim.cancel() };
+	}
+
+	function startRolling() {
+		play('dice');
+		clearInterval(faceTimer);
+		clearTimeout(rollTimer);
+		rolling = true;
+		faceTimer = setInterval(() => {
+			faces = [1 + Math.floor(Math.random() * 6), 1 + Math.floor(Math.random() * 6)];
+		}, 80);
+		rollTimer = setTimeout(() => {
+			clearInterval(faceTimer);
+			rolling = false;
+		}, ROLL_MS);
+	}
 
 	const inviteUrl = $derived(`${page.url.origin}/room/${data.code}`);
 	const myPlayer = $derived(game?.players.find((p) => p.id === me?.id));
@@ -42,7 +218,83 @@
 	const myTurn = $derived(!!cur && cur.id === me?.id);
 	const curOnline = $derived(!!cur && game.online.includes(cur.id));
 	const winner = $derived(game?.winner ? game.players.find((p) => p.id === game.winner) : null);
-	const pendingTile = $derived(game?.pendingBuy != null ? TILES[game.pendingBuy] : null);
+	/** jumlah tawaran masuk di asetku yang dijual */
+	const marketBadge = $derived(
+		Object.values(game?.market ?? {})
+			.filter((l) => l.seller === me?.id)
+			.reduce((n, l) => n + Object.keys(l.offers ?? {}).length, 0)
+	);
+	/** sewa yang menunggu persetujuan pemain yang sedang giliran */
+	const rentInfo = $derived.by(() => {
+		const r = game?.phase === 'rent' ? game.pendingRent : null;
+		const own = r && game.tiles[r.tile];
+		const owner = own && game.players.find((x) => x.id === own.owner);
+		if (!r || !owner) return null;
+		const tile = TILES[r.tile];
+		const rent = formatRp(r.amount);
+		const n = TILES.filter((t) => t.type === tile.type && game.tiles[t.i]?.owner === owner.id).length;
+		let text;
+		if (tile.type === 'station') text = `Kamu jalan-jalan naik ${tile.name} milik ${owner.name}, dengan total biaya ${rent}`;
+		else if (tile.type === 'utility') text = `Kamu pakai ${tile.name} milik ${owner.name}, dengan total biaya ${rent}`;
+		else if (own.level === 0) text = `Kamu jalan-jalan ke ${tile.name} punya ${owner.name} dengan total biaya ${rent}`;
+		else text = `Kamu Staycation di ${tile.name} punya ${owner.name} dengan total biaya ${rent}`;
+		const detail =
+			tile.type === 'property' ? (own.level === 0 ? 'tidak menginap' : HOUSE_LEVELS[own.level].name) : `${owner.name} punya ${n} ${tile.type === 'station' ? 'stasiun' : 'utilitas'}: ${TILES.filter((t) => t.type === tile.type && game.tiles[t.i]?.owner === owner.id).map((t) => t.short ?? t.name).join(', ')}`;
+		return { r, tile, owner, text, detail, title: tile.type === 'property' && own.level === 0 ? 'Tagihan' : 'Tagihan sewa', short: r.amount - (myPlayer?.money ?? 0) };
+	});
+	/** pemain hidup berikutnya setelah giliran ini */
+	const nextPlayer = $derived.by(() => {
+		if (!game) return null;
+		for (let k = 1; k < game.players.length; k++) {
+			const q = game.players[(game.turn + k) % game.players.length];
+			if (!q.bankrupt) return q.id === me?.id ? null : q;
+		}
+		return null;
+	});
+	/** voting kick: 70% pemain lain harus setuju */
+	const kv = $derived(game?.kickVote ?? null);
+	const kvInfo = $derived.by(() => {
+		if (!kv) return null;
+		const target = game.players.find((x) => x.id === kv.target);
+		const by = game.players.find((x) => x.id === kv.by);
+		const voters = game.players.filter((x) => !x.bankrupt && x.id !== kv.target);
+		const need = Math.ceil(voters.length * 0.7 - 1e-9);
+		const yes = voters.filter((x) => kv.votes[x.id] === true).length;
+		const no = voters.filter((x) => kv.votes[x.id] === false).length;
+		const mine = me ? kv.votes[me.id] : undefined;
+		const canVote = !!myPlayer && !myPlayer.bankrupt && myPlayer.id !== kv.target;
+		const left = Math.max(0, Math.ceil((kv.deadline - (nowMs + clockOffset)) / 1000));
+		return { target, by, voters: voters.length, need, yes, no, mine, canVote, left };
+	});
+	let lastKickKey = '';
+	$effect(() => {
+		const key = kv ? `${kv.target}:${kv.deadline}` : '';
+		if (key && key !== lastKickKey) play('offer');
+		lastKickKey = key;
+	});
+	const canStartKick = $derived(
+		game?.status === 'playing' && !!myPlayer && !myPlayer.bankrupt && !kv && game.players.filter((x) => !x.bankrupt).length >= 3
+	);
+
+	const showRent = $derived(!!rentInfo && myTurn && !rolling && !moving);
+
+	// batas waktu tagihan (jam server dipakai supaya semua pemain melihat hitungan yang sama)
+	const RENT_SECONDS = 120;
+	let clockOffset = 0;
+	let nowMs = $state(Date.now());
+	$effect(() => {
+		if (game?.phase !== 'rent' && !game?.kickVote) return;
+		const iv = setInterval(() => (nowMs = Date.now()), 250);
+		return () => clearInterval(iv);
+	});
+	const rentLeft = $derived.by(() => {
+		const dl = game?.phase === 'rent' ? game.pendingRent?.deadline : null;
+		if (!dl) return null;
+		return Math.max(0, Math.min(RENT_SECONDS, Math.ceil((dl - (nowMs + clockOffset)) / 1000)));
+	});
+	const fmtLeft = (sec) => `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+	const rentWait = $derived(rentInfo && rentLeft !== null && !rolling && !moving ? fmtLeft(rentLeft) : null);
+	const pendingTile =$derived(game?.pendingBuy != null ? TILES[game.pendingBuy] : null);
 
 	function showToast(msg) {
 		toast = msg;
@@ -62,11 +314,28 @@
 			.catch(() => {});
 		const s = getSocket();
 		const onState = (st) => {
+			if (lastJudolSeq === -1) lastJudolSeq = st.lastJudol?.seq ?? 0;
+			else if (st.lastJudol && st.lastJudol.seq > lastJudolSeq) {
+				lastJudolSeq = st.lastJudol.seq;
+				startJudol(st.lastJudol);
+			}
 			if (lastCardSeq === -1) lastCardSeq = st.lastCard?.seq ?? 0;
 			else if (st.lastCard && st.lastCard.seq > lastCardSeq) {
 				lastCardSeq = st.lastCard.seq;
-				card = st.lastCard;
+				pendingCard = st.lastCard;
 			}
+			const mk = st.mkEvent;
+			if (lastMkSeq === -1) lastMkSeq = mk?.seq ?? 0;
+			else if (mk && mk.seq > lastMkSeq) {
+				lastMkSeq = mk.seq;
+				onMarketEvent(mk, st);
+			}
+			const rs = st.rollSeq ?? 0;
+			if (lastRollSeq !== -1 && rs > lastRollSeq) startRolling();
+			lastRollSeq = rs;
+			if (st.now) clockOffset = st.now - Date.now();
+			if (game && st.turn !== game.turn) remote = null;
+			stateSounds(game, st);
 			game = st;
 		};
 		const onChat = (m) => {
@@ -85,14 +354,22 @@
 		s.on('room:state', onState);
 		s.on('chat', onChat);
 		s.on('chat:history', onHistory);
+		const onRemoteCount = (m) => {
+			remote = m.n ? m : null;
+			if (m.n) play('tick');
+		};
+		s.on('turn:countdown', onRemoteCount);
 		s.on('connect', onConnect);
 		s.on('disconnect', onDisconnect);
 		s.on('connect_error', onConnectError);
 		if (s.connected) join();
 		return () => {
+			clearInterval(faceTimer);
+			clearTimeout(rollTimer);
 			s.off('room:state', onState);
 			s.off('chat', onChat);
 			s.off('chat:history', onHistory);
+			s.off('turn:countdown', onRemoteCount);
 			s.off('connect', onConnect);
 			s.off('disconnect', onDisconnect);
 			s.off('connect_error', onConnectError);
@@ -104,7 +381,7 @@
 		game?.log.length;
 		chat.length;
 		tab;
-		tick().then(() => logEl && (logEl.scrollTop = logEl.scrollHeight));
+		if (tab === 'log' || tab === 'chat') tick().then(() => logEl && (logEl.scrollTop = logEl.scrollHeight));
 	});
 
 	$effect(() => {
@@ -120,7 +397,84 @@
 		if (!res.ok) showToast(res.error);
 		return res;
 	}
-	const act = (a) => emit('game:action', a);
+	const act = async (a) => {
+		const res = await emit('game:action', a);
+		if (res?.ok) {
+			if (a.type === 'stockBuy') play('buy');
+			else if (a.type === 'stockSell') play('earn');
+		}
+		return res;
+	};
+
+	// suara: positif (naik/cling) vs negatif (buzz/turun)
+	let muted = $state(isMuted());
+	function toggleMute() {
+		muted = !muted;
+		setMuted(muted);
+		if (!muted) play('notif');
+	}
+	$effect(() => {
+		if (countdown) play('tick');
+	});
+
+	// hitung mundur pemain yang giliran juga terlihat pemain lain
+	let remote = $state(/** @type {{id:string,n:number|null}|null} */ (null));
+	$effect(() => {
+		const n = countdown;
+		if (!myTurn && n === null) return;
+		getSocket().emit('turn:countdown', n);
+	});
+
+	/** bandingkan state lama dan baru untuk memutar suara event */
+	function stateSounds(prev, st) {
+		if (!prev || prev.status !== 'playing' && st.status !== 'ended') return;
+		const myId = me?.id;
+		if (prev.phase === 'rent' && st.phase !== 'rent' && prev.pendingRent) {
+			const payer = prev.players[prev.turn];
+			if (payer.id === myId) play('pay');
+			else if (prev.tiles[prev.pendingRent.tile]?.owner === myId) play('earn');
+		}
+		// pemain mana pun beli properti / bangun rumah: notif di web + nada notif HP
+		const nm = (id) => st.players.find((x) => x.id === id)?.name ?? 'Pemain';
+		let pinged = false;
+		for (const [i, t] of Object.entries(st.tiles)) {
+			const before = prev.tiles[i];
+			const tile = TILES[+i];
+			if (!before && prev.pendingBuy === +i) {
+				pushNotif(`🏠 ${nm(t.owner)} beli ${tile.name} · ${formatRp(tile.price)}`, 'buy', +i);
+				pinged = true;
+			} else if (before && t.level > before.level) {
+				pushNotif(`🔨 ${nm(t.owner)} bangun ${HOUSE_LEVELS[t.level].name} di ${tile.name}`, 'build', +i);
+				pinged = true;
+			}
+		}
+		if (pinged) play('ping');
+		if (st.players.some((p, i) => p.bankrupt && !prev.players[i]?.bankrupt)) play('bankrupt');
+		else if (st.players.some((p, i) => p.inJail && prev.players[i] && !prev.players[i].inJail)) play('jail');
+		if (st.status === 'playing' && st.turn !== prev.turn && st.players[st.turn].id === myId) play('turn');
+		if (prev.status === 'playing' && st.status === 'ended') play(st.winner === myId ? 'win' : 'bad');
+	}
+
+	// giliran berakhir otomatis 3-2-1 setelah dadu, bidak, dan kartu selesai
+	let countdown = $state(/** @type {number|null} */ (null));
+	$effect(() => {
+		const ready =
+			myTurn && game.phase === 'end' && myPlayer.money >= 0 && !rolling && !moving && !card && !pendingCard;
+		if (!ready) {
+			countdown = null;
+			return;
+		}
+		countdown = 3;
+		const iv = setInterval(() => {
+			if (countdown && countdown > 1) countdown -= 1;
+			else {
+				clearInterval(iv);
+				countdown = null;
+				act({ type: 'endTurn' });
+			}
+		}, 1000);
+		return () => clearInterval(iv);
+	});
 
 	async function copyInvite() {
 		try {
@@ -216,6 +570,8 @@
 							isMe={p.id === me?.id}
 							online={game.online.includes(p.id)}
 							isHost={p.id === game.hostId}
+							speaking={!!speaking[p.id]}
+							inVoice={voiceMembers.includes(p.id)}
 						/>
 						{#if isHost && p.id !== me?.id}
 							<button class="kick" onclick={() => emit('room:kick', { userId: p.id })} aria-label={`Keluarkan ${p.name}`}>✕</button>
@@ -224,23 +580,7 @@
 				{/each}
 			</div>
 
-			{#if myPlayer}
-				<h3>Pilih bidak</h3>
-				<div class="tokens">
-					{#each TOKENS as t}
-						{@const takenBy = game.players.find((p) => p.token === t.id)}
-						<button
-							class="tokbtn"
-							class:mine={myPlayer.token === t.id}
-							disabled={!!takenBy && takenBy.id !== me?.id}
-							onclick={() => emit('room:token', { token: t.id })}
-							title={t.label}
-						>
-							<span>{t.icon}</span><small>{t.label}</small>
-						</button>
-					{/each}
-				</div>
-			{:else}
+			{#if !myPlayer}
 				<p>Kamu menonton room ini.</p>
 			{/if}
 
@@ -260,7 +600,7 @@
 {:else}
 	<main class="game">
 		<div class="board-wrap">
-			<Board {game} images={cityImages} onTile={(i) => (selectedTile = i)}>
+			<Board {game} images={cityImages} {rolling} bind:moving bind:shown {onSalary} onTile={(i) => (selectedTile = i)}>
 				{#snippet center()}
 					<div class="hub">
 						<div class="decks">
@@ -273,11 +613,9 @@
 						</div>
 
 						{#if game.dice}
-							{#key game.seq}
-								<div class="dice" aria-label={`Dadu ${game.dice[0]} dan ${game.dice[1]}`}>
-									<span class="die">{game.dice[0]}</span><span class="die">{game.dice[1]}</span>
-								</div>
-							{/key}
+							<div class="dice" class:rolling aria-label={`Dadu ${game.dice[0]} dan ${game.dice[1]}`}>
+								<span class="die">{rolling ? faces[0] : game.dice[0]}</span><span class="die">{rolling ? faces[1] : game.dice[1]}</span>
+							</div>
 						{/if}
 
 						{#if game.status === 'ended'}
@@ -287,7 +625,11 @@
 								<button class="btn primary" onclick={newRoom}>Main lagi (room baru)</button>
 							</div>
 						{:else if myTurn}
-							<p class="turn-label">Giliranmu!</p>
+							{#if game.phase === 'end' && countdown && nextPlayer}
+								<p class="turn-label">Giliran <span style:color={nextPlayer.color}>{nextPlayer.name}</span></p>
+							{:else}
+								<p class="turn-label">Giliranmu!</p>
+							{/if}
 							{#if myPlayer.money < 0}
 								<p class="debt">Saldo minus {formatRp(myPlayer.money)}. Jual rumah atau gadai aset (klik petakmu), atau nyatakan bangkrut.</p>
 							{/if}
@@ -302,13 +644,18 @@
 									<button class="btn primary big" disabled={busy || myPlayer.money < 0} onclick={() => act({ type: 'roll' })}>
 										{myPlayer.inJail ? 'Coba dadu dobel' : game.extraRoll ? 'Lempar lagi (dobel!)' : 'Lempar dadu'}
 									</button>
-								{:else if game.phase === 'buy' && pendingTile}
+								{:else if game.phase === 'buy' && pendingTile && !rolling && !moving}
 									<button class="btn primary" disabled={busy || myPlayer.money < pendingTile.price} onclick={() => act({ type: 'buy' })}>
 										Beli {pendingTile.name} ({formatRp(pendingTile.price)})
 									</button>
 									<button class="btn" disabled={busy} onclick={() => act({ type: 'skip' })}>Lewati</button>
 								{:else if game.phase === 'end'}
-									<button class="btn primary big" disabled={busy || myPlayer.money < 0} onclick={() => act({ type: 'endTurn' })}>Selesai giliran</button>
+									{#if countdown}
+										{#key countdown}<p class="countdown" aria-live="polite">{countdown}</p>{/key}
+									{/if}
+									<button class="btn small" disabled={busy || myPlayer.money < 0} onclick={() => act({ type: 'endTurn' })}>
+										{countdown ? 'Lanjut sekarang' : 'Selesai giliran'}
+									</button>
 								{/if}
 								{#if myPlayer.money < 0}
 									<button class="btn small" onclick={() => confirmAct('Yakin bangkrut? Semua asetmu disita bank.', { type: 'bankrupt' })}>Nyatakan bangkrut</button>
@@ -316,9 +663,18 @@
 							</div>
 						{:else if cur}
 							<p class="turn-label">Giliran <span style:color={cur.color}>{cur.name}</span></p>
+							{#if remote && remote.id === cur.id && remote.n}
+								{#key remote.n}<p class="countdown" aria-live="polite">{remote.n}</p>{/key}
+								<small>Giliran {cur.name} berakhir…</small>
+							{/if}
 							{#if !curOnline && myPlayer && !myPlayer.bankrupt}
 								<button class="btn small" disabled={busy} onclick={() => emit('game:skip')}>Lewati giliran (dia offline)</button>
 							{/if}
+						{/if}
+						{#if rentWait && rentInfo}
+							<p class="rent-wait" class:urgent={rentLeft !== null && rentLeft <= 15}>
+								{#if myTurn}Selesaikan tagihanmu, sisa waktu <strong>{rentWait}</strong>{:else}Tunggu, {cur?.name} sedang menyelesaikan tagihan <strong>{rentWait}</strong>{/if}
+							</p>
 						{/if}
 						<p class="hint">Klik petak untuk lihat detail, bangun rumah, atau gadai.</p>
 					</div>
@@ -327,16 +683,42 @@
 		</div>
 
 		<aside class="side">
+			{#if calDate && myPlayer && !myPlayer.bankrupt}
+				<div class="calrow">
+				{#key calDate.getTime()}
+					<div class="cal" class:payday={toGajian === 0} aria-label={`Tanggal ${calDate.getUTCDate()} ${MONTHS[calDate.getUTCMonth()]}`}>
+						<span class="cal-top">{MONTHS[calDate.getUTCMonth()]} {calDate.getUTCFullYear()}</span>
+						<strong class="cal-day">{calDate.getUTCDate()}</strong>
+						<span class="cal-dow">{DAYS[calDate.getUTCDay()]}</span>
+					</div>
+				{/key}
+				<p class="cal-note">{toGajian === 0 ? '💰 Hari gajian!' : `Gajian tgl 25 · ${toGajian} hari lagi`}</p>
+				</div>
+			{/if}
 			<div class="cards">
 				{#each game.players as p, i (p.id)}
+					<div class="card-wrap">
 					<PlayerCard
 						{p}
 						{game}
+						speaking={!!speaking[p.id]}
+						inVoice={voiceMembers.includes(p.id)}
 						isTurn={game.status === 'playing' && i === game.turn}
 						isMe={p.id === me?.id}
 						online={game.online.includes(p.id)}
 						isHost={p.id === game.hostId}
+						hold={holdMoney}
+						{salary}
 					/>
+					{#if canStartKick && p.id !== me?.id && !p.bankrupt}
+						<button
+							class="kick vote"
+							title={`Voting keluarkan ${p.name}`}
+							aria-label={`Voting keluarkan ${p.name}`}
+							onclick={() => confirmAct(`Ajukan voting untuk mengeluarkan ${p.name}? Butuh 70% pemain lain setuju.`, { type: 'kickStart', target: p.id })}
+						>🗳️</button>
+					{/if}
+					</div>
 				{/each}
 			</div>
 
@@ -346,12 +728,20 @@
 					<button role="tab" aria-selected={tab === 'chat'} class:active={tab === 'chat'} onclick={() => { tab = 'chat'; unread = 0; }}>
 						Obrolan{#if unread}<span class="badge">{unread}</span>{/if}
 					</button>
+					<button role="tab" aria-selected={tab === 'market'} class:active={tab === 'market'} onclick={() => { tab = 'market'; mkUnseen = 0; }}>
+						Pasar{#if mkUnseen || marketBadge}<span class="badge bell" aria-label="Ada kabar baru di Pasar">🔔{#if marketBadge} {marketBadge}{/if}</span>{/if}
+					</button>
+					<button role="tab" aria-selected={tab === 'portfolio'} class:active={tab === 'portfolio'} onclick={() => (tab = 'portfolio')}>Portofolio</button>
 				</div>
-				<div class="feed-body" bind:this={logEl}>
+				<div class="feed-body" class:tall={tab === 'market' || tab === 'portfolio'} bind:this={logEl}>
 					{#if tab === 'log'}
 						{#each game.log as l}
 							<p><time>{fmtTime(l.t)}</time> {l.msg}</p>
 						{/each}
+					{:else if tab === 'market'}
+						<Market {game} meId={me?.id} onAction={act} onTile={(i) => (selectedTile = i)} />
+					{:else if tab === 'portfolio'}
+						<Portfolio {game} meId={me?.id} onAction={act} onTile={(i) => (selectedTile = i)} />
 					{:else}
 						{#each chat as m}
 							<p><time>{fmtTime(m.t)}</time> <strong>{m.name}:</strong> {m.text}</p>
@@ -385,14 +775,103 @@
 		<TileSheet {game} images={cityImages} index={selectedTile} meId={me?.id} onAction={act} onClose={() => (selectedTile = null)} />
 	{/if}
 
+	{#if judol}
+		<div class="judol-pop" class:win={judol.done && judol.delta > 0} class:lose={judol.done && judol.delta < 0} aria-live="polite">
+			<span class="card-kind">🎰 Judol · {judol.playerName}</span>
+			<small>Taruhan {formatRp(judol.bet)}</small>
+			<strong class="jpct">{judol.done ? `${judol.pct > 0 ? '+' : ''}${judol.pct}%` : `${judolFace > 0 ? '+' : ''}${judolFace}%`}</strong>
+			{#if judol.done}
+				<span class="jdelta">{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
+			{:else}
+				<span class="jdelta">Memutar…</span>
+			{/if}
+		</div>
+	{/if}
+
 	{#if card}
 		<button class="card-pop {card.deck}" onclick={() => (card = null)} aria-live="polite">
-			<span class="card-kind">{card.deck === 'musibah' ? '⚡ Musibah' : '🍀 Takdir'}</span>
+			<span class="card-kind">{card.deck === 'musibah' ? '⚡ Musibah' : card.deck === 'tax' ? '🧾 Pajak' : '🍀 Takdir'}</span>
+			{#each game.players.filter((x) => x.id === card.playerId) as who (who.id)}
+				<span class="card-ava" title={who.name}><Avatar p={who} /></span>
+			{/each}
 			<span class="card-who">{card.playerName}</span>
-			<span class="card-text">{card.text}</span>
+			<span class="card-text">{card.text}{#if card.amount} <strong>-{formatAmt(card.amount)}</strong>{/if}</span>
 			<small>Klik untuk tutup</small>
 		</button>
 	{/if}
+{/if}
+
+{#if kvInfo}
+	<div class="kick-pop" role="alertdialog" aria-live="polite">
+		<strong>🗳️ Keluarkan {kvInfo.target?.name ?? 'pemain'}?</strong>
+		<small>Diajukan {kvInfo.by?.name} · setuju {kvInfo.yes}/{kvInfo.need} dibutuhkan (dari {kvInfo.voters} pemain) · sisa {kvInfo.left} dtk</small>
+		{#if kvInfo.canVote}
+			<div class="kick-acts">
+				<button class="btn small" class:primary={kvInfo.mine === true} onclick={() => act({ type: 'kickVote', agree: true })}>👍 Setuju</button>
+				<button class="btn small" class:primary={kvInfo.mine === false} onclick={() => act({ type: 'kickVote', agree: false })}>👎 Tidak</button>
+				{#if kv?.by === me?.id}<button class="btn small" onclick={() => act({ type: 'kickCancel' })}>Batalkan</button>{/if}
+			</div>
+		{:else}
+			<small>Kamu tidak ikut voting ini.</small>
+		{/if}
+	</div>
+{/if}
+
+{#if showRent && rentInfo}
+	{@const ri = rentInfo}
+	{@const rimg = cityImages[ri.tile.name]}
+	<div class="rent-wrap">
+		<div class="rent-pop" role="alertdialog" aria-labelledby="rent-text">
+			<div class="rent-body">
+				<div class="rent-text">
+					<span class="card-kind">🧾 {ri.title}{#if rentWait} · ⏳ {rentWait}{/if}</span>
+					<p id="rent-text">{ri.text} <em>({ri.detail})</em></p>
+					{#if ri.owner.inJail}<small>Pemiliknya lagi di Ruang Sidang, jadi bayarannya masuk Kas Negara.</small>{/if}
+				</div>
+				<div class="rent-prev">
+					<i class="fband" style:background={ri.tile.group ? GROUPS[ri.tile.group].color : 'var(--paper)'}></i>
+					<span class="fthumb" style:background-image={rimg ? `url("${rimg.url}")` : null}>{#if !rimg}{ri.tile.short ?? '🏠'}{/if}</span>
+					<strong>{ri.tile.name}</strong>
+				</div>
+			</div>
+			{#if ri.short > 0}
+				<p class="rent-short">Uangmu kurang {formatRp(ri.short)}. Jual rumah, gadai/jual aset (klik petakmu), atau jual saham di Portofolio. Kalau menyerah, semua asetmu jadi milik {ri.owner.name}.</p>
+			{/if}
+			<div class="rent-acts">
+				<button class="btn primary big" disabled={busy || ri.short > 0} onclick={() => act({ type: 'payRent' })}>Bayar {formatRp(ri.r.amount)}</button>
+				{#if ri.short > 0}
+					<button class="btn small" onclick={() => confirmAct(`Menyerah? Semua asetmu jadi milik ${ri.owner.name}.`, { type: 'bankrupt' })}>Menyerah</button>
+				{/if}
+			</div>
+		</div>
+	</div>
+{/if}
+
+<button class="mute" onclick={toggleMute} aria-label={muted ? 'Nyalakan suara' : 'Matikan suara'} title={muted ? 'Suara mati' : 'Suara nyala'}>{muted ? '🔇' : '🔊'}</button>
+
+{#if notifs.length}
+	<div class="notifs" aria-live="polite">
+		{#each notifs as n (n.id)}
+			<button class="notif {n.kind}" onclick={() => { if (n.tile !== null) selectedTile = n.tile; else { tab = 'market'; mkUnseen = 0; } }}>{n.msg}</button>
+		{/each}
+	</div>
+{/if}
+
+{#if flight}
+	{@const ft = listingTile(flight.tile)}
+	{@const img = cityImages[ft.name]}
+	{#key flight.n}
+		<div class="flycard" use:fly={flight} aria-hidden="true">
+			<i class="fband" style:background={ft.group ? GROUPS[ft.group].color : 'var(--paper)'}></i>
+			<span class="fthumb" style:background-image={img ? `url("${img.url}")` : null}>{#if !img}{ft.short ?? '🏠'}{/if}</span>
+			<strong>{ft.name}</strong>
+			<small>{formatRp(flight.price)}</small>
+		</div>
+	{/key}
+{/if}
+
+{#if game && myPlayer && me}
+	<Voice meId={me.id} players={game.players} bind:speaking bind:members={voiceMembers} />
 {/if}
 
 {#if toast}<div class="toast" role="status">{toast}</div>{/if}
@@ -485,9 +964,6 @@
 		gap: 0.75rem;
 	}
 	.players h2,
-	.players h3 {
-		margin: 0;
-	}
 	.plist {
 		display: grid;
 		gap: 0.5rem;
@@ -498,35 +974,46 @@
 		gap: 0.4rem;
 		align-items: center;
 	}
+	.card-wrap {
+		position: relative;
+	}
+	.kick.vote {
+		position: absolute;
+		top: -6px;
+		right: -6px;
+		width: 26px;
+		height: 26px;
+		font-size: 0.8rem;
+		cursor: pointer;
+		opacity: 0.85;
+	}
+	.kick-pop {
+		position: fixed;
+		top: 4.6rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 66;
+		width: min(380px, calc(100vw - 2rem));
+		display: grid;
+		gap: 0.3rem;
+		padding: 0.6rem 0.8rem;
+		background: #fff3c4;
+		border: 3px solid var(--ink);
+		border-radius: 12px;
+		box-shadow: 4px 4px 0 var(--ink);
+		animation: rentin 0.25s ease both;
+	}
+	.kick-acts {
+		display: flex;
+		gap: 0.4rem;
+		flex-wrap: wrap;
+	}
 	.kick {
 		border: 2px solid var(--ink);
 		background: #fff;
 		border-radius: 50%;
 		width: 30px;
 		height: 30px;
-	}
-	.tokens {
-		display: grid;
-		grid-template-columns: repeat(6, 1fr);
-		gap: 0.4rem;
-	}
-	.tokbtn {
-		border: 2px solid var(--ink);
-		background: #fff;
-		border-radius: 10px;
-		padding: 0.3rem 0.1rem;
-		display: grid;
-		justify-items: center;
-	}
-	.tokbtn span {
-		font-size: 1.6rem;
-	}
-	.tokbtn small {
-		font-size: 0.65rem;
-	}
-	.tokbtn.mine {
-		background: var(--angkot);
-		box-shadow: 0 3px 0 var(--ink);
 	}
 	.lobby-actions {
 		display: flex;
@@ -605,7 +1092,40 @@
 	.dice {
 		display: flex;
 		gap: 0.5rem;
-		animation: roll 0.45s ease-out;
+	}
+	.countdown {
+		margin: 0;
+		font-size: 2.4rem;
+		font-weight: 800;
+		line-height: 1;
+		animation: tick 1s ease-out;
+	}
+	@keyframes tick {
+		from {
+			transform: scale(1.8);
+			opacity: 0;
+		}
+		30% {
+			transform: scale(1);
+			opacity: 1;
+		}
+	}
+	.dice.rolling .die {
+		animation: shake 0.16s linear infinite;
+	}
+	.dice.rolling .die:nth-child(2) {
+		animation-direction: reverse;
+	}
+	@keyframes shake {
+		0% {
+			transform: rotate(-14deg) translateY(-3px);
+		}
+		50% {
+			transform: rotate(14deg) translateY(2px);
+		}
+		100% {
+			transform: rotate(-14deg) translateY(-3px);
+		}
 	}
 	.die {
 		width: clamp(32px, 6vw, 48px);
@@ -671,6 +1191,60 @@
 		gap: 0.75rem;
 		align-content: start;
 	}
+	.calrow {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+	}
+	.cal {
+		display: inline-grid;
+		justify-items: center;
+		width: 4.2rem;
+		border: 2px solid var(--ink);
+		border-radius: 8px;
+		background: #fff;
+		box-shadow: 2px 2px 0 var(--ink);
+		overflow: hidden;
+		line-height: 1.1;
+		animation: calflip 0.35s ease both;
+	}
+	.cal-top {
+		width: 100%;
+		text-align: center;
+		background: var(--merah);
+		color: #fff;
+		font-size: 0.62rem;
+		font-weight: 800;
+		padding: 0.12rem 0;
+	}
+	.cal-day {
+		font-size: 1.7rem;
+		padding-top: 0.1rem;
+	}
+	.cal-dow {
+		font-size: 0.62rem;
+		color: var(--ink-soft);
+		font-weight: 700;
+		padding-bottom: 0.15rem;
+	}
+	.cal.payday {
+		background: #d8f5e2;
+	}
+	.cal.payday .cal-top {
+		background: #1f8a4c;
+	}
+	.cal-note {
+		margin: 0;
+		font-size: 0.75rem;
+		font-weight: 700;
+		color: var(--ink-soft);
+	}
+	@keyframes calflip {
+		from {
+			transform: rotateX(70deg);
+			opacity: 0.4;
+		}
+	}
 	.cards {
 		display: grid;
 		gap: 0.45rem;
@@ -688,6 +1262,7 @@
 	}
 	.tabs button {
 		flex: 1;
+		white-space: nowrap;
 		border: 0;
 		background: transparent;
 		padding: 0.5rem;
@@ -712,6 +1287,9 @@
 		padding: 0.5rem 0.75rem;
 		font-size: 0.86rem;
 		line-height: 1.35;
+	}
+	.feed-body.tall {
+		height: 440px;
 	}
 	.feed-body p {
 		margin: 0 0 0.35rem;
@@ -756,15 +1334,31 @@
 		gap: 0.3rem;
 		text-align: left;
 		z-index: 50;
-		animation: flip 0.4s ease-out;
+		animation: flip 0.6s ease-out;
 	}
 	.card-pop.musibah {
 		background: var(--merah);
 		color: #fff;
 	}
+	.card-pop.tax {
+		background: #fde4e7;
+		color: var(--ink);
+	}
 	.card-pop.takdir {
 		background: var(--angkot);
 		color: var(--ink);
+	}
+	.card-ava {
+		position: absolute;
+		top: 0.6rem;
+		right: 0.6rem;
+		width: 2rem;
+		height: 2rem;
+		border-radius: 50%;
+		border: 2px solid var(--ink);
+		background: #fff;
+		overflow: hidden;
+		font-size: 0.9rem;
 	}
 	.card-kind {
 		font-weight: 800;
@@ -784,12 +1378,258 @@
 		opacity: 0.7;
 	}
 	@keyframes flip {
-		from {
-			transform: translate(-50%, -50%) rotateY(90deg);
+		0% {
+			transform: translate(-50%, -30%) rotateY(90deg) scale(0.5);
+			opacity: 0;
 		}
-		to {
+		60% {
+			transform: translate(-50%, -52%) rotateY(-12deg) scale(1.06);
+			opacity: 1;
+		}
+		100% {
 			transform: translate(-50%, -50%);
 		}
+	}
+	.judol-pop {
+		position: fixed;
+		left: 50%;
+		top: 38%;
+		transform: translate(-50%, -50%);
+		z-index: 64;
+		pointer-events: none;
+		width: min(280px, calc(100vw - 2rem));
+		display: grid;
+		justify-items: center;
+		gap: 0.15rem;
+		padding: 0.9rem 1rem;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 16px;
+		box-shadow: 6px 6px 0 var(--ink);
+		animation: rentin 0.25s ease both;
+	}
+	.judol-pop.win {
+		background: #d8f5e2;
+	}
+	.judol-pop.lose {
+		background: #fde0dc;
+	}
+	.jpct {
+		font-size: 2.6rem;
+		font-variant-numeric: tabular-nums;
+		line-height: 1.1;
+	}
+	.judol-pop.win .jpct {
+		color: #1f8a4c;
+	}
+	.judol-pop.lose .jpct {
+		color: var(--merah);
+	}
+	.jdelta {
+		font-weight: 800;
+	}
+	.rent-wait {
+		margin: 0.2rem 0 0;
+		font-size: 0.85rem;
+		font-weight: 700;
+		color: var(--ink);
+	}
+	.rent-wait.urgent {
+		color: var(--merah);
+		animation: urgent 0.8s ease-in-out infinite alternate;
+	}
+	@keyframes urgent {
+		to {
+			opacity: 0.45;
+		}
+	}
+	.rent-wrap {
+		position: fixed;
+		inset: 0;
+		z-index: 65;
+		display: grid;
+		place-items: center;
+		pointer-events: none;
+		padding: 1rem;
+	}
+	.rent-pop {
+		pointer-events: auto;
+		width: min(440px, 100%);
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 16px;
+		box-shadow: 8px 8px 0 var(--ink);
+		padding: 1rem 1.1rem;
+		display: grid;
+		gap: 0.7rem;
+		animation: rentin 0.25s ease both;
+	}
+	@keyframes rentin {
+		from {
+			opacity: 0;
+			transform: translateY(12px) scale(0.96);
+		}
+	}
+	.rent-body {
+		display: grid;
+		grid-template-columns: 1fr 130px;
+		gap: 0.9rem;
+		align-items: center;
+	}
+	.rent-text p {
+		margin: 0.3rem 0;
+		font-weight: 700;
+		line-height: 1.35;
+	}
+	.rent-text em {
+		font-style: normal;
+		color: var(--ink-soft);
+		font-weight: 600;
+	}
+	.rent-prev {
+		display: grid;
+		text-align: center;
+		border: 3px solid var(--ink);
+		border-radius: 10px;
+		overflow: hidden;
+		background: #fff;
+	}
+	.rent-prev strong {
+		font-size: 0.8rem;
+		padding: 0.25rem;
+	}
+	.rent-short {
+		margin: 0;
+		font-size: 0.82rem;
+		color: var(--merah);
+		font-weight: 700;
+	}
+	.rent-acts {
+		display: flex;
+		gap: 0.5rem;
+		justify-content: center;
+		flex-wrap: wrap;
+	}
+	.mute {
+		position: fixed;
+		left: 0.75rem;
+		bottom: 0.75rem;
+		z-index: 60;
+		width: 2.4rem;
+		height: 2.4rem;
+		border-radius: 50%;
+		border: 2px solid var(--ink);
+		background: #fff;
+		box-shadow: 2px 2px 0 var(--ink);
+		font-size: 1.1rem;
+		cursor: pointer;
+	}
+	.notifs {
+		position: fixed;
+		top: 0.9rem;
+		left: 50%;
+		transform: translateX(-50%);
+		display: grid;
+		gap: 0.4rem;
+		z-index: 70;
+		width: min(420px, calc(100vw - 2rem));
+		pointer-events: none;
+	}
+	.notif {
+		all: unset;
+		box-sizing: border-box;
+		pointer-events: auto;
+		cursor: pointer;
+		background: #fff;
+		border: 2px solid var(--ink);
+		border-radius: 10px;
+		box-shadow: 3px 3px 0 var(--ink);
+		padding: 0.5rem 0.75rem;
+		font-weight: 700;
+		font-size: 0.85rem;
+		animation: notif 4.2s ease both;
+	}
+	.notif.offer {
+		background: #fff3c4;
+	}
+	.notif.sold {
+		background: #d8f5e2;
+	}
+	.notif.buy,
+	.notif.build {
+		background: #e3f0ff;
+	}
+	.notif.reject {
+		background: #fde0dc;
+	}
+	@keyframes notif {
+		0% {
+			opacity: 0;
+			transform: translateY(-14px);
+		}
+		8%,
+		80% {
+			opacity: 1;
+			transform: none;
+		}
+		100% {
+			opacity: 0;
+			transform: translateY(-8px);
+		}
+	}
+	.badge.bell {
+		animation: ring 1.2s ease-in-out infinite;
+	}
+	@keyframes ring {
+		0%,
+		60%,
+		100% {
+			transform: rotate(0);
+		}
+		70% {
+			transform: rotate(-14deg);
+		}
+		80% {
+			transform: rotate(12deg);
+		}
+		90% {
+			transform: rotate(-8deg);
+		}
+	}
+	.flycard {
+		position: fixed;
+		z-index: 80;
+		pointer-events: none;
+		width: 150px;
+		background: #fff;
+		border: 3px solid var(--ink);
+		border-radius: 10px;
+		box-shadow: 5px 5px 0 var(--ink);
+		overflow: hidden;
+		display: grid;
+		text-align: center;
+		opacity: 0;
+	}
+	.fband {
+		height: 14px;
+		border-bottom: 2px solid var(--ink);
+	}
+	.fthumb {
+		height: 70px;
+		background: var(--paper) center / cover;
+		display: grid;
+		place-items: center;
+		font-weight: 800;
+		font-size: 1.4rem;
+	}
+	.flycard strong {
+		font-size: 0.85rem;
+		padding: 0.25rem 0.3rem 0;
+	}
+	.flycard small {
+		padding-bottom: 0.3rem;
+		color: var(--ink-soft);
+		font-weight: 700;
 	}
 	.toast {
 		position: fixed;

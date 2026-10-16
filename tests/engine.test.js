@@ -6,9 +6,11 @@ import {
 	startGame,
 	applyAction,
 	GameError,
-	rentFor
+	rentFor,
+	expireRent,
+	expireKick
 } from '../server/game/engine.js';
-import { TILES, MAX_LEVEL, START_MONEY } from '../src/lib/shared/board.js';
+import { TILES, MAX_LEVEL, START_MONEY, STOCKS } from '../src/lib/shared/board.js';
 
 function seeded(seed) {
 	return () => {
@@ -32,7 +34,7 @@ function botTurn(s, rng) {
 	const act = (a) => applyAction(s, p.id, a, rng);
 	let guard = 0;
 	while (s.status === 'playing' && s.players[s.turn].id === p.id && guard++ < 50) {
-		if (p.money < 0) {
+		if (p.money < 0 || (s.phase === 'rent' && p.money < s.pendingRent.amount)) {
 			const mine = Object.entries(s.tiles).filter(([, t]) => t.owner === p.id);
 			const withHouse = mine.filter(([, t]) => t.level > 0).sort((a, b) => b[1].level - a[1].level);
 			try {
@@ -48,7 +50,8 @@ function botTurn(s, rng) {
 			}
 			continue;
 		}
-		if (s.phase === 'roll') {
+		if (s.phase === 'rent') act({ type: 'payRent' });
+		else if (s.phase === 'roll') {
 			if (p.inJail && p.jailFree) act({ type: 'useJailFree' });
 			act({ type: 'roll' });
 		} else if (s.phase === 'buy') {
@@ -111,8 +114,8 @@ test('sewa dobel saat kuasai grup, dan sewa Rumah OKB', () => {
 		applyAction(s, owner, { type: 'build', tile: 3 });
 	}
 	assert.equal(s.tiles[1].level, MAX_LEVEL);
-	assert.equal(rentFor(s, 1), 250);
-	assert.throws(() => applyAction(s, owner, { type: 'build', tile: 1 }), /OKB/);
+	assert.equal(rentFor(s, 1), 375); // Kebun Sawit = 1,5x Rumah OKB (250)
+	assert.throws(() => applyAction(s, owner, { type: 'build', tile: 1 }), /Sawit/);
 });
 
 test('bangun harus merata', () => {
@@ -139,6 +142,12 @@ test('sewa aset pemilik yang di Ruang Sidang masuk Kas Negara', () => {
 	let n = 0;
 	applyAction(s, visitor.id, { type: 'roll' }, () => dice[n++ % 2]);
 	assert.equal(visitor.pos, 39);
+	// sewa menunggu persetujuan: belum ada uang berpindah
+	assert.equal(s.phase, 'rent');
+	assert.equal(visitor.money, before.v);
+	assert.throws(() => applyAction(s, visitor.id, { type: 'endTurn' }), GameError);
+	applyAction(s, visitor.id, { type: 'payRent' });
+	assert.equal(s.phase, 'end');
 	assert.equal(owner.money, before.o);
 	assert.equal(visitor.money, before.v - 50);
 	assert.equal(s.kasNegara, before.k + 50);
@@ -152,4 +161,202 @@ test('bayar denda langsung bebas, denda masuk Kas Negara', () => {
 	assert.equal(p.inJail, false);
 	assert.equal(s.kasNegara, 50);
 	assert.equal(s.phase, 'roll');
+});
+
+test('marketplace: jual, ubah harga, beli langsung', () => {
+	const s = newGame(2, seeded(11));
+	const [a, b] = s.players.map((p) => p.id);
+	s.tiles[1] = { owner: a, level: 0, mortgaged: false };
+	assert.throws(() => applyAction(s, b, { type: 'mkList', tile: 1, price: 50 }), GameError); // bukan miliknya
+	applyAction(s, a, { type: 'mkList', tile: 1, price: 80 });
+	applyAction(s, a, { type: 'mkList', tile: 1, price: 70 }); // ubah harga
+	assert.equal(s.market[1].price, 70);
+	assert.throws(() => applyAction(s, a, { type: 'mkBuy', tile: 1 }), GameError); // beli sendiri
+	s.players[1].money = 60;
+	assert.throws(() => applyAction(s, b, { type: 'mkBuy', tile: 1 }), /Uang kurang/);
+	s.players[1].money = 100;
+	const sellerBefore = s.players[0].money;
+	applyAction(s, b, { type: 'mkBuy', tile: 1 });
+	assert.equal(s.tiles[1].owner, b);
+	assert.equal(s.players[1].money, 30);
+	assert.equal(s.players[0].money, sellerBefore + 70);
+	assert.equal(s.market[1], undefined);
+});
+
+test('marketplace: nego, tolak, terima', () => {
+	const s = newGame(3, seeded(12));
+	const [a, b, c] = s.players.map((p) => p.id);
+	s.tiles[1] = { owner: a, level: 0, mortgaged: false };
+	applyAction(s, a, { type: 'mkList', tile: 1, price: 100 });
+	applyAction(s, b, { type: 'mkOffer', tile: 1, price: 40 });
+	applyAction(s, c, { type: 'mkOffer', tile: 1, price: 55 });
+	assert.deepEqual(s.market[1].offers, { [b]: 40, [c]: 55 });
+	applyAction(s, a, { type: 'mkReject', tile: 1, buyer: b });
+	assert.equal(b in s.market[1].offers, false);
+	assert.throws(() => applyAction(s, b, { type: 'mkAccept', tile: 1, buyer: c }), GameError); // bukan penjual
+	applyAction(s, a, { type: 'mkAccept', tile: 1, buyer: c });
+	assert.equal(s.tiles[1].owner, c);
+	assert.equal(s.players[2].money, START_MONEY - 55);
+	assert.equal(s.market[1], undefined);
+});
+
+test('marketplace: aset bergedung / digadai tidak bisa dijual, bangkrut bersihkan listing', () => {
+	const s = newGame(2, seeded(13));
+	const [a, b] = s.players.map((p) => p.id);
+	s.tiles[1] = { owner: a, level: 0, mortgaged: false };
+	s.tiles[3] = { owner: a, level: 0, mortgaged: false };
+	applyAction(s, a, { type: 'mkList', tile: 1, price: 90 });
+	applyAction(s, b, { type: 'mkOffer', tile: 1, price: 10 });
+	applyAction(s, a, { type: 'build', tile: 1 }); // bangun -> listing grup ditarik
+	assert.equal(s.market[1], undefined);
+	assert.throws(() => applyAction(s, a, { type: 'mkList', tile: 3, price: 90 }), /rumah/);
+	applyAction(s, a, { type: 'sell', tile: 1 });
+	applyAction(s, a, { type: 'mortgage', tile: 3 });
+	assert.throws(() => applyAction(s, a, { type: 'mkList', tile: 3, price: 90 }), /Tebus/);
+	applyAction(s, a, { type: 'mkList', tile: 1, price: 90 });
+	applyAction(s, a, { type: 'bankrupt' });
+	assert.deepEqual(s.market, {});
+});
+
+test('saham: beli kurangi saldo, jual tambah saldo, harga bergerak tiap giliran', () => {
+	const s = newGame(2, seeded(21));
+	const [a] = s.players.map((p) => p.id);
+	const price = s.stocks.BACA.price;
+	const before = s.players[0].money;
+	assert.throws(() => applyAction(s, a, { type: 'stockBuy', sym: 'XXXX', qty: 1 }), GameError);
+	assert.throws(() => applyAction(s, a, { type: 'stockBuy', sym: 'BACA', qty: 0 }), GameError);
+	assert.throws(() => applyAction(s, a, { type: 'stockBuy', sym: 'BACA', qty: 1e6 }), GameError);
+	applyAction(s, a, { type: 'stockBuy', sym: 'BACA', qty: 3 });
+	assert.equal(s.players[0].money, before - price * 3);
+	assert.equal(s.players[0].stocks.BACA.qty, 3);
+	assert.throws(() => applyAction(s, a, { type: 'stockSell', sym: 'BACA', qty: 4 }), /hanya punya 3/);
+	s.stocks.BACA.price = price + 10;
+	applyAction(s, a, { type: 'stockSell', sym: 'BACA', qty: 2 });
+	assert.equal(s.players[0].money, before - price * 3 + (price + 10) * 2);
+	assert.equal(s.players[0].stocks.BACA.qty, 1);
+	applyAction(s, a, { type: 'stockSell', sym: 'BACA', qty: 1 });
+	assert.equal(s.players[0].stocks.BACA, undefined);
+	// uang tidak cukup
+	s.players[0].money = 10;
+	assert.throws(() => applyAction(s, a, { type: 'stockBuy', sym: 'BACA', qty: 1 }), /Uang kurang/);
+});
+
+test('saham: harga tetap dalam batas setelah banyak giliran, netWorth menghitung saham', () => {
+	const s = newGame(2, seeded(22));
+	const a = s.players[0].id;
+	applyAction(s, a, { type: 'stockBuy', sym: 'GATO', qty: 5 });
+	for (let i = 0; i < 400; i++) {
+		const p = s.players[s.turn];
+		applyAction(s, p.id, { type: 'roll' }, seeded(i + 1));
+		if (s.phase === 'buy') applyAction(s, p.id, { type: 'skip' });
+		if (s.status !== 'playing') break;
+		if (s.players[s.turn].id === p.id && s.phase === 'end') applyAction(s, p.id, { type: 'endTurn' });
+		else if (s.players[s.turn].id === p.id) break;
+	}
+	for (const [sym, st] of Object.entries(s.stocks)) {
+		const def = STOCKS.find((x) => x.sym === sym);
+		assert.ok(st.price >= Math.ceil(def.base * 0.2) && st.price <= def.base * 5, `${sym} ${st.price}`);
+		assert.ok(st.history.length <= 24);
+	}
+});
+
+test('sewa harus dibayar manual; uang kurang tidak bisa bayar; menyerah -> aset ke penagih', () => {
+	const s = newGame(2, seeded(11));
+	const [owner, visitor] = s.players;
+	s.tiles[39] = { owner: owner.id, level: 0, mortgaged: false };
+	s.tiles[37] = { owner: visitor.id, level: 0, mortgaged: false };
+	s.turn = 1;
+	visitor.pos = 36;
+	visitor.money = 10;
+	const dice = [0, 1 / 6];
+	let n = 0;
+	applyAction(s, visitor.id, { type: 'roll' }, () => dice[n++ % 2]);
+	assert.equal(s.phase, 'rent');
+	assert.throws(() => applyAction(s, visitor.id, { type: 'payRent' }), GameError);
+	assert.throws(() => applyAction(s, owner.id, { type: 'payRent' }), GameError);
+	applyAction(s, visitor.id, { type: 'bankrupt' });
+	assert.equal(s.tiles[37].owner, owner.id);
+	assert.equal(s.status, 'ended');
+});
+
+test('tagihan sewa punya batas 2 menit; habis = menyerah, aset ke penagih', () => {
+	const s = newGame(2, seeded(11));
+	const [owner, visitor] = s.players;
+	s.tiles[39] = { owner: owner.id, level: 0, mortgaged: false };
+	s.tiles[37] = { owner: visitor.id, level: 0, mortgaged: false };
+	s.turn = 1;
+	visitor.pos = 36;
+	const dice = [0, 1 / 6];
+	let n = 0;
+	applyAction(s, visitor.id, { type: 'roll' }, () => dice[n++ % 2]);
+	assert.equal(s.phase, 'rent');
+	const dl = s.pendingRent.deadline;
+	assert.ok(dl - Date.now() >= 119_000);
+	assert.equal(expireRent(s, dl - 1000), false);
+	assert.equal(expireRent(s, dl + 1), true);
+	assert.equal(s.tiles[37].owner, owner.id);
+	assert.equal(s.status, 'ended');
+});
+
+test('judol: hasil -100%..+100% dari taruhan, taruhan tidak boleh melebihi saldo', () => {
+	const s = newGame(2, seeded(3));
+	const p = s.players[0];
+	const start = p.money;
+	applyAction(s, p.id, { type: 'judol', amount: 100 }, () => 0); // -100%
+	assert.equal(p.money, start - 100);
+	assert.equal(s.lastJudol.pct, -100);
+	applyAction(s, p.id, { type: 'judol', amount: 100 }, () => 0.99999); // +100%
+	assert.equal(p.money, start);
+	assert.equal(s.lastJudol.delta, 100);
+	assert.throws(() => applyAction(s, p.id, { type: 'judol', amount: p.money + 1 }, () => 0.5), GameError);
+	assert.throws(() => applyAction(s, p.id, { type: 'judol', amount: 0 }, () => 0.5), GameError);
+});
+
+test('kartu Pemutihan bisa dijual di Pasar dan pindah ke pembeli', () => {
+	const s = newGame(2, seeded(4));
+	const [a, b] = s.players;
+	assert.throws(() => applyAction(s, a.id, { type: 'mkList', tile: 'card', price: 40 }), GameError);
+	a.jailFree = 1;
+	applyAction(s, a.id, { type: 'mkList', tile: 'card', price: 40 });
+	const key = 'card:' + a.id;
+	assert.equal(s.market[key].price, 40);
+	assert.throws(() => applyAction(s, a.id, { type: 'mkBuy', tile: key }), GameError);
+	const ma = a.money;
+	const mb = b.money;
+	applyAction(s, b.id, { type: 'mkBuy', tile: key });
+	assert.equal(a.jailFree, 0);
+	assert.equal(b.jailFree, 1);
+	assert.equal(a.money, ma + 40);
+	assert.equal(b.money, mb - 40);
+	assert.equal(s.market[key], undefined);
+	assert.equal(s.mkEvent.kind, 'sold');
+});
+
+test('vote kick: butuh 70% pemain lain setuju', () => {
+	const s = newGame(4, seeded(8));
+	const [a, b, c, d] = s.players;
+	assert.throws(() => applyAction(s, a.id, { type: 'kickStart', target: a.id }), GameError);
+	applyAction(s, a.id, { type: 'kickStart', target: d.id }); // a setuju otomatis, butuh ceil(3*0.7)=3
+	assert.throws(() => applyAction(s, b.id, { type: 'kickStart', target: c.id }), GameError); // sudah ada voting
+	assert.throws(() => applyAction(s, d.id, { type: 'kickVote', agree: false }), GameError); // target tidak boleh vote
+	applyAction(s, b.id, { type: 'kickVote', agree: true });
+	assert.equal(d.bankrupt, false);
+	applyAction(s, c.id, { type: 'kickVote', agree: true });
+	assert.equal(d.bankrupt, true);
+	assert.equal(s.kickVote, null);
+});
+
+test('vote kick gagal kalau penolak terlalu banyak, atau habis waktu', () => {
+	const s = newGame(4, seeded(9));
+	const [a, b, c, d] = s.players;
+	applyAction(s, a.id, { type: 'kickStart', target: d.id });
+	applyAction(s, b.id, { type: 'kickVote', agree: false });
+	assert.equal(s.kickVote, null);
+	assert.equal(d.bankrupt, false);
+	const s2 = newGame(3, seeded(10));
+	applyAction(s2, s2.players[0].id, { type: 'kickStart', target: s2.players[2].id });
+	assert.equal(expireKick(s2, Date.now() + 1000), false);
+	assert.equal(expireKick(s2, Date.now() + 60_000), true);
+	assert.equal(s2.kickVote, null);
+	assert.throws(() => applyAction(newGame(2, seeded(1)), 'a', { type: 'kickStart', target: 'b' }), GameError);
 });

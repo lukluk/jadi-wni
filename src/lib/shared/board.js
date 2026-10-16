@@ -14,9 +14,24 @@ export const HOUSE_LEVELS = [
 	{ name: 'Rumah Subsidi', short: 'SUB', icon: '🏚️' },
 	{ name: 'Rumah Tipe 45', short: 'T45', icon: '🏠' },
 	{ name: 'Rumah Cluster', short: 'CLS', icon: '🏡' },
-	{ name: 'Rumah OKB', short: 'OKB', icon: '🏰' }
+	{ name: 'Rumah OKB', short: 'OKB', icon: '🏰' },
+	{ name: 'Kebun Sawit', short: 'SWT', icon: '🌴' }
 ];
 export const MAX_LEVEL = HOUSE_LEVELS.length - 1;
+export const SAWIT_LEVEL = MAX_LEVEL;
+export const OKB_LEVEL = SAWIT_LEVEL - 1;
+/** Kebun Sawit: biaya bangun x3 lipat, tapi tiap kebun menambah gaji GAJIAN */
+export const SAWIT_COST_MULT = 3;
+export const SAWIT_SALARY_BONUS = 30;
+
+/** biaya membangun ke level `level` (1..MAX_LEVEL) */
+export const buildCost = (houseCost, level) => (level >= SAWIT_LEVEL ? houseCost * SAWIT_COST_MULT : houseCost);
+/** total biaya yang sudah ditanam sampai `level` */
+export const investedCost = (houseCost, level) => {
+	let total = 0;
+	for (let l = 1; l <= level; l++) total += buildCost(houseCost, l);
+	return total;
+};
 
 export const GROUPS = {
 	coklat: { label: 'Pinggiran', color: '#8B5A2B', houseCost: 50 },
@@ -34,12 +49,19 @@ export const GROUPS = {
  *   name:string, short?:string, group?:string, price?:number, rent?:number[], amount?:number, desc?:string }} Tile
  */
 
-/** rent: [tanah, Subsidi, Tipe45, Cluster, OKB] */
-const p = (name, group, price, rent, short) => ({ type: 'property', name, group, price, rent, short });
+/** rent: [tanah, Subsidi, Tipe45, Cluster, OKB]; sewa Kebun Sawit = 1,5x OKB */
+const p = (name, group, price, rent, short) => ({
+	type: 'property',
+	name,
+	group,
+	price,
+	rent: [...rent, Math.round((rent[4] * 1.5) / 5) * 5],
+	short
+});
 
 /** @type {Tile[]} */
 export const TILES = [
-	{ type: 'start', name: 'GAJIAN', desc: `Lewat sini terima gaji Rp ${SALARY} jt` },
+	{ type: 'start', name: 'GAJIAN', desc: `Lewat sini terima gaji Rp ${SALARY} jt (+${SAWIT_SALARY_BONUS} jt per Kebun Sawit)` },
 	p('Cikarang', 'coklat', 60, [2, 10, 30, 90, 250]),
 	{ type: 'takdir', name: 'Takdir' },
 	p('Bekasi', 'coklat', 60, [4, 20, 60, 180, 450]),
@@ -81,7 +103,15 @@ export const TILES = [
 	p('SCBD', 'navy', 400, [50, 200, 600, 1400, 2000])
 ].map((t, i) => ({ ...t, i }));
 
-export const STATION_RENT = [0, 25, 50, 100, 200];
+/** gaji GAJIAN pemain: dasar + bonus per Kebun Sawit */
+export const salaryFor = (tiles, playerId) => {
+	let sawit = 0;
+	for (const [i, t] of Object.entries(tiles))
+		if (t.owner === playerId && TILES[+i].type === 'property' && t.level === SAWIT_LEVEL) sawit += 1;
+	return { sawit, bonus: sawit * SAWIT_SALARY_BONUS, amount: SALARY + sawit * SAWIT_SALARY_BONUS };
+};
+
+export const STATION_RENT =[0, 25, 50, 100, 200];
 export const UTILITY_MULT = [0, 4, 10];
 
 export const isOwnable = (t) => t.type === 'property' || t.type === 'station' || t.type === 'utility';
@@ -147,4 +177,49 @@ export const TOKENS = [
 
 export const PLAYER_COLORS = ['#D7263D', '#1F6FEB', '#2E9E5B', '#F08A24', '#8E44AD', '#0F8B8D'];
 
-export const formatRp = (n) => `${n < 0 ? '-' : ''}Rp ${Math.abs(n).toLocaleString('id-ID')} jt`;
+/**
+ * Saham plesetan. Harga per lot dalam juta; vol = volatilitas per giliran.
+ */
+export const STOCKS = [
+	{ sym: 'BACA', name: 'Bank Baca Aja', base: 100, vol: 0.03, note: 'Bank besar, kalem, jarang drama' },
+	{ sym: 'BIBR', name: 'Bank Bibir Rakyat', base: 80, vol: 0.04, note: 'Bank kredit mikro, naik pelan-pelan' },
+	{ sym: 'ASIK', name: 'Astra Asik Internasional', base: 120, vol: 0.055, note: 'Otomotif & alat berat, lumayan goyang' },
+	{ sym: 'GATO', name: 'Gado Tekno Online', base: 40, vol: 0.1, note: 'Startup, siap-siap roller coaster' }
+];
+export const STOCK_HISTORY = 24;
+
+/** nilai dalam juta; 1000 juta = 1 M */
+export const formatAmt = (n) => {
+	const a = Math.abs(n);
+	return a >= 1000
+		? `${(a / 1000).toLocaleString('id-ID', { maximumFractionDigits: 2 })} M`
+		: `${a.toLocaleString('id-ID')} jt`;
+};
+
+// ---------- kalender pribadi ----------
+// GAJIAN = tanggal 25. Satu putaran papan = satu bulan (25 -> 25 bulan berikutnya).
+// Tiap petak menambah hari dengan bobot tetap yang tidak seragam, jadi tanggal bisa lompat 0-2 hari.
+const CAL_W = Array.from({ length: TILES.length }, (_, i) => 0.35 + ((i * 7 + 3) % 5) * 0.4);
+CAL_W[TILES.length - 1] = 1.6;
+const CAL_CUM = [0];
+for (const w of CAL_W) CAL_CUM.push(CAL_CUM[CAL_CUM.length - 1] + w);
+
+/**
+ * tanggal pemain yang berada di petak `pos` pada bulan ke-`laps` sejak game mulai
+ * @param {{y:number,m:number}} base bulan GAJIAN pertama (m: 0-11)
+ */
+export function calendarDate(base, laps, pos) {
+	const DAY = 86400000;
+	const start = Date.UTC(base.y, base.m + laps, 25);
+	const days = Math.round((Date.UTC(base.y, base.m + laps + 1, 25) - start) / DAY);
+	const off = Math.round((days * CAL_CUM[pos]) / CAL_CUM[TILES.length]);
+	return new Date(start + off * DAY);
+}
+
+/** kartu Pemutihan (bebas penjara) juga bisa dijual di Pasar; kuncinya "card:<idPenjual>" */
+export const isCardKey = (k) => typeof k === 'string' && k.startsWith('card:');
+export const JAIL_CARD = { name: 'Kartu Pemutihan', short: '🎫', type: 'card', group: null, price: 0 };
+/** petak (angka) atau kartu (kunci "card:...") untuk satu listing Pasar */
+export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
+
+export const formatRp = (n) => `${n < 0 ? '-' : ''}Rp ${formatAmt(n)}`;

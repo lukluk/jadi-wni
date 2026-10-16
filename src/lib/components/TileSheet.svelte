@@ -4,6 +4,9 @@
 		GROUPS,
 		HOUSE_LEVELS,
 		MAX_LEVEL,
+		SAWIT_LEVEL,
+		SAWIT_SALARY_BONUS,
+		buildCost,
 		STATION_RENT,
 		UTILITY_MULT,
 		formatRp
@@ -19,6 +22,17 @@
 	const mine = $derived(own?.owner === meId && game.status === 'playing');
 	const group = $derived(t.group ? GROUPS[t.group] : null);
 	const redeem = $derived(t.price ? Math.ceil((t.price / 2) * 1.1) : 0);
+
+	const listing = $derived(game.market?.[index]);
+	const offerCount = $derived(Object.keys(listing?.offers ?? {}).length);
+	const canList = $derived(
+		mine &&
+			!own.mortgaged &&
+			(t.type !== 'property' || !TILES.some((x) => x.group === t.group && (game.tiles[x.i]?.level ?? 0) > 0))
+	);
+	let priceDraft = $state(/** @type {string|null} */ (null));
+	const askPrice = $derived(priceDraft ?? String(listing?.price ?? t.price ?? ''));
+	const askValid = $derived(Number.isFinite(Math.round(Number(askPrice))) && Math.round(Number(askPrice)) >= 1);
 
 	let dialog;
 	$effect(() => {
@@ -61,7 +75,7 @@
 						{/each}
 					</tbody>
 				</table>
-				<p class="meta">Harga {formatRp(t.price)} · Bangun per level {formatRp(group.houseCost)} · Gadai {formatRp(t.price / 2)}</p>
+				<p class="meta">Harga {formatRp(t.price)} · Bangun per level {formatRp(group.houseCost)} · Kebun Sawit {formatRp(buildCost(group.houseCost, SAWIT_LEVEL))} (+{formatRp(SAWIT_SALARY_BONUS)} gaji GAJIAN) · Gadai {formatRp(t.price / 2)}</p>
 			{:else if t.type === 'station'}
 				<table>
 					<tbody>
@@ -92,16 +106,53 @@
 				<p class="owner">Belum ada pemilik.</p>
 			{/if}
 
+			{#if listing}
+				<p class="listed">
+					🏷️ Dijual di Pasar: <strong>{formatRp(listing.price)}</strong>
+					{#if mine}{offerCount ? `· ${offerCount} tawaran, cek tab Pasar` : '· belum ada tawaran'}
+					{:else}· beli atau nego di tab Pasar{/if}
+				</p>
+			{/if}
+
+			{#if canList}
+				<form
+					class="sellform"
+					onsubmit={(e) => {
+						e.preventDefault();
+						onAction({ type: 'mkList', tile: index, price: Math.round(Number(askPrice)) });
+					}}
+				>
+					<label>
+						<span>{listing ? 'Harga jual (jt)' : 'Jual di Pasar (jt)'}</span>
+						<input
+							type="number"
+							min="1"
+							inputmode="numeric"
+							value={askPrice}
+							oninput={(e) => (priceDraft = e.currentTarget.value)}
+						/>
+					</label>
+					<button class="btn primary small" disabled={!askValid}>{listing ? 'Ubah harga' : 'Jual'}</button>
+					{#if listing}
+						<button type="button" class="btn small" onclick={() => onAction({ type: 'mkUnlist', tile: index })}>Tarik</button>
+					{/if}
+				</form>
+			{:else if mine && listing}
+				<div class="actions">
+					<button class="btn small" onclick={() => onAction({ type: 'mkUnlist', tile: index })}>Tarik dari Pasar</button>
+				</div>
+			{/if}
+
 			{#if mine}
 				<div class="actions">
 					{#if t.type === 'property' && !own.mortgaged && own.level < MAX_LEVEL}
 						<button class="btn primary small" onclick={() => onAction({ type: 'build', tile: index })}>
-							Bangun {HOUSE_LEVELS[own.level + 1].name} ({formatRp(group.houseCost)})
+							Bangun {HOUSE_LEVELS[own.level + 1].name} ({formatRp(buildCost(group.houseCost, own.level + 1))})
 						</button>
 					{/if}
 					{#if t.type === 'property' && own.level > 0}
 						<button class="btn small" onclick={() => onAction({ type: 'sell', tile: index })}>
-							Jual {HOUSE_LEVELS[own.level].name} (+{formatRp(group.houseCost / 2)})
+							Jual {HOUSE_LEVELS[own.level].name} (+{formatRp(buildCost(group.houseCost, own.level) / 2)})
 						</button>
 					{/if}
 					{#if !own.mortgaged && own.level === 0}
@@ -122,6 +173,32 @@
 </dialog>
 
 <style>
+	.listed {
+		margin: 0.4rem 0 0;
+		padding: 0.35rem 0.6rem;
+		background: #fff8d6;
+		border: 2px solid var(--ink);
+		border-radius: 8px;
+		font-size: 0.85rem;
+	}
+	.sellform {
+		display: flex;
+		gap: 0.4rem;
+		align-items: flex-end;
+		flex-wrap: wrap;
+		margin-top: 0.5rem;
+	}
+	.sellform label {
+		flex: 1 1 8rem;
+		display: grid;
+		gap: 0.15rem;
+		font-size: 0.75rem;
+		font-weight: 700;
+	}
+	.sellform input {
+		min-width: 0;
+		padding: 0.3rem 0.5rem;
+	}
 	dialog {
 		border: 0;
 		padding: 0;
