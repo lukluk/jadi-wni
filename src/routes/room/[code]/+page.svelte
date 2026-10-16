@@ -13,6 +13,7 @@
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Market from '$lib/components/Market.svelte';
 	import Portfolio from '$lib/components/Portfolio.svelte';
+	import SkyScene from '$lib/components/SkyScene.svelte';
 	import {
 		TILES,
 		GROUPS,
@@ -569,8 +570,10 @@
 {:else if !game}
 	<main class="center-msg"><p>Menyiapkan room…</p></main>
 {:else if game.status === 'lobby'}
+	<SkyScene />
 	<main class="lobby">
 		<section class="invite">
+			<span class="room-badge">Room <b>{data.code}</b></span>
 			<h1>Ajak teman main</h1>
 			<p>Kirim link ini. Siapa pun yang punya link bisa masuk setelah login Google.</p>
 			<div class="link-row">
@@ -623,7 +626,13 @@
 					</button>
 					{#if game.players.length < MIN_PLAYERS}<small>Butuh minimal {MIN_PLAYERS} pemain.</small>{/if}
 				{:else}
-					<p class="wait">Menunggu host memulai game…</p>
+					<div class="wait">
+						<span class="dice-spin" aria-hidden="true">🎲</span>
+						<div>
+							<strong>Menunggu host memulai…</strong>
+							<small>Santai dulu, sebentar lagi mulai. <span class="dots"><i>.</i><i>.</i><i>.</i></span></small>
+						</div>
+					</div>
 				{/if}
 				<button class="btn small" onclick={leave}>Keluar room</button>
 			</div>
@@ -949,10 +958,26 @@
 		gap: 2rem;
 		align-items: start;
 	}
+	.room-badge {
+		display: inline-block;
+		background: var(--angkot);
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		padding: 0.2rem 0.85rem;
+		font-weight: 700;
+		font-size: 0.85rem;
+		box-shadow: 0 3px 0 var(--ink);
+		margin-bottom: 0.9rem;
+	}
+	.room-badge b {
+		font-family: 'JetBrains Mono', monospace;
+		letter-spacing: 0.12em;
+	}
 	.invite h1 {
 		font-size: clamp(2rem, 5vw, 3.2rem);
 		line-height: 1;
 		margin: 0 0 0.75rem;
+		text-shadow: 2px 2px 0 rgba(255, 255, 255, 0.6);
 	}
 	.invite p {
 		margin: 0 0 1rem;
@@ -972,10 +997,19 @@
 		margin-top: 0.75rem;
 		flex-wrap: wrap;
 	}
+	.invite p {
+		background: rgba(255, 253, 246, 0.72);
+		backdrop-filter: blur(3px);
+		border: 2px solid rgba(20, 33, 61, 0.12);
+		border-radius: var(--radius-m);
+		padding: 0.7rem 0.9rem;
+	}
 	.players {
-		background: var(--paper);
+		background: rgba(255, 253, 246, 0.92);
+		backdrop-filter: blur(6px);
 		border: 2px solid var(--ink);
 		border-radius: var(--radius-m);
+		box-shadow: 8px 8px 0 var(--ink);
 		padding: 1.25rem;
 		display: grid;
 		gap: 0.75rem;
@@ -1040,8 +1074,58 @@
 		margin-top: 0.5rem;
 	}
 	.wait {
+		display: flex;
+		align-items: center;
+		gap: 0.7rem;
 		margin: 0;
-		font-weight: 600;
+		padding: 0.6rem 0.9rem;
+		background: var(--angkot);
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		box-shadow: 0 3px 0 var(--ink);
+	}
+	.wait strong {
+		display: block;
+		line-height: 1.2;
+	}
+	.wait small {
+		color: var(--ink-soft);
+	}
+	.dice-spin {
+		font-size: 1.6rem;
+		line-height: 1;
+		animation: tumble 2.6s ease-in-out infinite;
+	}
+	@keyframes tumble {
+		0%,
+		60%,
+		100% {
+			transform: rotate(0);
+		}
+		78% {
+			transform: translateY(-8px) rotate(200deg);
+		}
+		90% {
+			transform: rotate(350deg);
+		}
+	}
+	.dots i {
+		animation: blink 1.4s infinite both;
+	}
+	.dots i:nth-child(2) {
+		animation-delay: 0.2s;
+	}
+	.dots i:nth-child(3) {
+		animation-delay: 0.4s;
+	}
+	@keyframes blink {
+		0%,
+		100% {
+			opacity: 0.2;
+		}
+		50% {
+			opacity: 1;
+		}
 	}
 
 	/* game */
