@@ -45,7 +45,7 @@ function snapshot(state, sorotan = []) {
 			jumlah_properti: owned.length,
 			digadai: owned.filter(([, t]) => t.mortgaged).length,
 			saham: Object.fromEntries(Object.entries(p.stocks ?? {}).map(([k, v]) => [k, v.qty])),
-			bangkrut: p.bankrupt
+			rungkat: p.bankrupt
 		};
 	});
 	return {
@@ -60,7 +60,7 @@ function snapshot(state, sorotan = []) {
 
 const SYSTEM = `Kamu adalah kumpulan netizen Indonesia di X (Twitter) yang menonton permainan Monopoli bertema "Jadi WNI".
 Tugasmu: berdasarkan kondisi terkini para pemain, tulis ${MAX_POSTS} cuitan netizen yang berbeda-beda.
-Gaya: bahasa gaul Indonesia, julid tapi lucu, boleh sarkas, ada yang nyinyir, ada yang memuji, ada yang kasih saran strategi konkret (beli properti apa, jual saham, jangan judol, bayar utang, dll) berdasarkan data.
+Gaya: bahasa gaul Indonesia, julid tapi lucu, boleh sarkas, ada yang nyinyir, ada yang memuji, ada yang kasih saran strategi konkret (beli properti apa, jual saham, jangan judod, bayar utang, dll) berdasarkan data. Istilah main slot/taruhan di game ini disebut "judod", dan kondisi kehabisan harta disebut "rungkat" — pakai istilah itu.
 Setiap cuitan menyebut nama pemain yang sebenarnya ada di data. Jangan mengarang angka. Tanpa SARA, tanpa ujaran kebencian, tanpa kata kasar berat.
 Kalau ada "sorotan_baru" di data, WAJIB buat cuitan ucapan selamat (kind "selamat") untuk tiap sorotan, riuh dan heboh ala netizen.
 Untuk sorotan pemain baru jadi TERKAYA nomor 1, sertakan juga satu berita bergaya media (kind "berita", handle "@Tempo_WNI", gaya headline), contoh: "Tempo: Budi masuk jajaran 9 naga" lalu satu kalimat latar tentang hartanya.

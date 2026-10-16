@@ -115,7 +115,7 @@
 
 		{#if playing}
 			<section class="judol">
-				<h4>🎰 Judol</h4>
+				<h4>🎰 Judod</h4>
 				<div class="row">
 					<input
 						type="number"

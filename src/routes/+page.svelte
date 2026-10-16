@@ -53,19 +53,19 @@
 					<dt>Status</dt>
 					<dd>Dari Rumah Subsidi ke Rumah OKB</dd>
 					<dt>Berlaku</dt>
-					<dd>Sampai bangkrut</dd>
+					<dd>Sampai rungkat</dd>
 				</dl>
 				<div class="photo" aria-hidden="true"><span>🛵</span></div>
 			</div>
 			<div class="dice" aria-hidden="true"><i>⚀</i><i>⚃</i></div>
 		</div>
 		<p class="lede">
-			Beli kota, kena <b>Musibah</b>, dapat <b>Takdir</b>, bangun rumah, main saham, cobain judol,
+			Beli kota, kena <b>Musibah</b>, dapat <b>Takdir</b>, bangun rumah, main saham, cobain judod,
 			sampai jadi sultan Rp 10 M. Hidup itu keras — untung ada teman.
 		</p>
 		<ul class="chips" aria-label="Fitur">
 			<li>📈 Saham</li>
-			<li>🎰 Judol</li>
+			<li>🎰 Judod</li>
 			<li>🚔 Sogok aparat</li>
 			<li>💬 Netizen</li>
 		</ul>

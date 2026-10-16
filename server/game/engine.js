@@ -114,7 +114,7 @@ export function addPlayer(state, user) {
 }
 
 export function removePlayer(state, userId) {
-	if (state.status !== 'lobby') fail('Tidak bisa keluar saat game berjalan — gunakan Bangkrut.');
+	if (state.status !== 'lobby') fail('Tidak bisa keluar saat game berjalan — gunakan Rungkat.');
 	const idx = state.players.findIndex((p) => p.id === userId);
 	if (idx < 0) return;
 	const [p] = state.players.splice(idx, 1);
@@ -597,7 +597,7 @@ function goBankrupt(state, p) {
 		log(state, `💸 ${p.name} menyerah! ${n} asetnya jadi milik ${creditor.name}.`);
 	} else {
 		for (const [i, t] of Object.entries(state.tiles)) if (t.owner === p.id) delete state.tiles[i];
-		log(state, `💸 ${p.name} bangkrut! Semua asetnya disita bank.`);
+		log(state, `💸 ${p.name} rungkat! Semua asetnya disita bank.`);
 	}
 	p.stocks = {};
 	p.jailFree = 0;
@@ -805,7 +805,7 @@ function judol(state, userId, amount, rng) {
 	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, reels: judolReels(pct, rng) };
 	log(
 		state,
-		`🎰 ${p.name} main judol ${formatRp(bet)}: ${delta >= 0 ? 'menang' : 'kalah'} ${formatRp(Math.abs(delta))} (${pct > 0 ? '+' : ''}${pct}%).`
+		`🎰 ${p.name} main judod ${formatRp(bet)}: ${delta >= 0 ? 'menang' : 'kalah'} ${formatRp(Math.abs(delta))} (${pct > 0 ? '+' : ''}${pct}%).`
 	);
 }
 
@@ -1091,7 +1091,7 @@ function dispatch(state, userId, action, rng) {
 		case 'endTurn': {
 			const p = requireTurn(state, userId);
 			if (state.phase !== 'end') fail('Selesaikan aksimu dulu.');
-			if (p.money < 0) fail('Saldo minus! Jual rumah, gadai properti, atau nyatakan bangkrut.');
+			if (p.money < 0) fail('Saldo minus! Jual rumah, gadai properti, atau nyatakan rungkat.');
 			return nextTurn(state);
 		}
 

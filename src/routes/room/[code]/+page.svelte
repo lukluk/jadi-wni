@@ -535,7 +535,7 @@
 			pl.outcome === 'lanjut'
 				? 'Sisa di atas 0: kamu LANJUT main hanya dengan uang sisa (tanpa aset).'
 				: pl.outcome === 'bangkrut'
-					? 'Sisa 0 atau kurang: kamu BANGKRUT.' + (pl.creditorId ? ' Aset sisa jadi milik penagih.' : '')
+					? 'Sisa 0 atau kurang: kamu RUNGKAT.' + (pl.creditorId ? ' Aset sisa jadi milik penagih.' : '')
 					: '';
 		confirmAct(head + (pl.outcome === 'keluar' ? '' : est) + tail + (pl.outcome === 'keluar' ? '' : '\n\nIni perkiraan; angka final dihitung server.') + '\n\nLanjut menyerah?', { type: 'bankrupt' });
 	}
@@ -641,7 +641,7 @@
 {:else}
 	<main class="game">
 		<div class="board-wrap">
-			<Board {game} meId={me?.id ?? null} images={cityImages} logos={tileLogos} {rolling} bind:moving bind:shown {onSalary} onTile={(i) => (selectedTile = i)}>
+			<Board {game} meId={me?.id ?? null} images={cityImages} logos={tileLogos} {rolling} bind:moving bind:shown {onSalary} onTile={(i) => (selectedTile = i)} onBuild={(i) => act({ type: 'build', tile: i })}>
 				{#snippet center()}
 					<div class="hub">
 						<div class="decks">
@@ -675,7 +675,7 @@
 								<p class="turn-label">Giliranmu!</p>
 							{/if}
 							{#if myPlayer.money < 0}
-								<p class="debt">Saldo minus {formatRp(myPlayer.money)}. Jual rumah atau gadai aset (klik petakmu), atau nyatakan bangkrut.</p>
+								<p class="debt">Saldo minus {formatRp(myPlayer.money)}. Jual rumah atau gadai aset (klik petakmu), atau nyatakan rungkat.</p>
 							{/if}
 							<div class="acts">
 								{#if game.phase === 'roll'}
@@ -702,7 +702,7 @@
 									</button>
 								{/if}
 								{#if myPlayer.money < 0}
-									<button class="btn small" onclick={() => confirmAct('Yakin bangkrut? Semua asetmu disita bank.', { type: 'bankrupt' })}>Nyatakan bangkrut</button>
+									<button class="btn small" onclick={() => confirmAct('Yakin rungkat? Semua asetmu disita bank.', { type: 'bankrupt' })}>Nyatakan rungkat</button>
 								{/if}
 							</div>
 						{:else if cur}

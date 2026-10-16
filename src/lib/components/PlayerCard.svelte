@@ -60,7 +60,7 @@
 	const owned = $derived(Object.values(game.tiles).filter((t) => t.owner === p.id).length);
 	const status = $derived(
 		p.bankrupt
-			? 'Bangkrut'
+			? 'Rungkat'
 			: p.inJail
 				? `Di Ruang Sidang (${p.jailTurns}/3)`
 				: game.status === 'lobby'

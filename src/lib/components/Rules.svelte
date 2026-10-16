@@ -31,10 +31,10 @@
 			<div class="body">
 				<section>
 					<h4>🎯 Tujuan</h4>
-					<p>Jadi WNI paling sukses: kumpulkan kekayaan sebanyak-banyaknya, sampai pemain lain bangkrut. Uang dihitung dalam <b>juta rupiah (jt)</b>; 1.000 jt = Rp 1 M.</p>
+					<p>Jadi WNI paling sukses: kumpulkan kekayaan sebanyak-banyaknya, sampai pemain lain rungkat. Uang dihitung dalam <b>juta rupiah (jt)</b>; 1.000 jt = Rp 1 M.</p>
 					<ul>
 						<li><b>Menang otomatis</b> kalau kekayaan bersihmu tembus <b>{formatRp(WIN_NETWORTH)}</b>.</li>
-						<li>Atau jadi pemain terakhir yang belum bangkrut / keluar.</li>
+						<li>Atau jadi pemain terakhir yang belum rungkat / keluar.</li>
 						<li>Atau saat host menekan <i>Akhiri game</i>: pemenang = kekayaan bersih terbesar.</li>
 						<li><b>Kekayaan bersih</b> = uang + harga properti + bangunan yang sudah dibangun + nilai saham.</li>
 					</ul>
@@ -129,15 +129,15 @@
 				</section>
 
 				<section>
-					<h4>🎰 Judol</h4>
+					<h4>🎰 Judod</h4>
 					<p>Di tab Portofolio kamu bisa bertaruh berapa pun dari saldomu. Hasilnya acak <b>−100% sampai +100%</b> dari taruhan, ditampilkan sebagai mesin slot. Rata-rata impas, tapi bisa habis semua. Judi itu merusak, di game pun begitu. 😅</p>
 				</section>
 
 				<section>
-					<h4>💸 Utang, menyerah & bangkrut</h4>
+					<h4>💸 Utang, menyerah & rungkat</h4>
 					<ul>
 						<li>Saldo minus harus ditutup dengan jual rumah, gadai, atau jual saham.</li>
-						<li>Tombol <b>Menyerah</b> (pojok kanan-bawah) menjual semua asetmu otomatis untuk membayar tagihan. Kalau masih ada sisa, kamu lanjut main hanya dengan sisa uang itu. Kalau tidak cukup, kamu <b>bangkrut</b>: asetmu jatuh ke penagih (atau ke bank kalau tidak ada penagih).</li>
+						<li>Tombol <b>Menyerah</b> (pojok kanan-bawah) menjual semua asetmu otomatis untuk membayar tagihan. Kalau masih ada sisa, kamu lanjut main hanya dengan sisa uang itu. Kalau tidak cukup, kamu <b>rungkat</b>: asetmu jatuh ke penagih (atau ke bank kalau tidak ada penagih).</li>
 						<li>Tanpa utang sama sekali, menyerah berarti keluar dari game.</li>
 					</ul>
 				</section>

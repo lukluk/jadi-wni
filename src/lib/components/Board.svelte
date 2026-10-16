@@ -211,17 +211,33 @@
 	<!-- ikon rumah: di luar petak, menjorok ke area tengah (biru muda) -->
 	{#each TILES as t (t.i)}
 		{@const own = game.tiles[t.i]}
-		{#if t.group && own?.level}
+		{@const bq = canBuild(game, meId, t.i)}
+		{#if t.group && (own?.level || bq)}
 			{@const hp = edge(t.i)}
 			{@const hx = hp.inner[0] + (hp.side === 'l' ? 1 : hp.side === 'r' ? -1 : 0) * 1.6}
 			{@const hy = hp.inner[1] + (hp.side === 't' ? 1 : hp.side === 'b' ? -1 : 0) * 1.6}
-			<span
-				class="house"
-				title={`${t.name}: ${HOUSE_LEVELS[own.level].name}`}
-				style:left="{hx}%"
-				style:top="{pctY(hy)}%"
-				style:--g={GROUPS[t.group].color}
-			>{HOUSE_LEVELS[own.level].icon}</span>
+			{#if own?.level}
+				<span
+					class="house"
+					title={`${t.name}: ${HOUSE_LEVELS[own.level].name}`}
+					style:left="{hx}%"
+					style:top="{pctY(hy)}%"
+					style:--g={GROUPS[t.group].color}
+				>{HOUSE_LEVELS[own.level].icon}</span>
+			{/if}
+			{#if bq}
+				<button
+					class="upgrade"
+					class:attached={!!own?.level}
+					class:poor={!bq.afford}
+					title={`${t.name}: bangun ${bq.name} (${formatRp(bq.cost)})${bq.afford ? '' : ' — uang belum cukup'}`}
+					aria-label={`Bangun ${bq.name} di ${t.name} seharga ${formatRp(bq.cost)}`}
+					style:left="{hx}%"
+					style:top="{pctY(hy)}%"
+					style:--g={GROUPS[t.group].color}
+					onclick={(e) => { e.stopPropagation(); onBuild?.(t.i); }}
+				>+</button>
+			{/if}
 		{/if}
 	{/each}
 
@@ -353,6 +369,48 @@
 		border: 2px solid var(--g);
 		filter: drop-shadow(0 1px 0 rgba(0, 0, 0, 0.35));
 		z-index: 1;
+	}
+	.upgrade {
+		position: absolute;
+		transform: translate(-50%, -50%);
+		z-index: 3;
+		display: grid;
+		place-items: center;
+		width: clamp(14px, 3.4cqi, 24px);
+		height: clamp(14px, 3.4cqi, 24px);
+		padding: 0;
+		border-radius: 50%;
+		border: 2px solid #fff;
+		background: var(--g, #2e9e5b);
+		color: #fff;
+		font-size: clamp(11px, 3cqi, 20px);
+		font-weight: 900;
+		line-height: 1;
+		cursor: pointer;
+		box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+		animation: upgrade-pop 1.6s ease-in-out infinite;
+	}
+	/* kalau sudah ada rumah, tempel sebagai badge di pojok kanan-atas ikon rumah */
+	.upgrade.attached {
+		transform: translate(35%, -115%);
+	}
+	.upgrade.poor {
+		background: var(--ink-soft, #7a7a7a);
+		opacity: 0.85;
+		animation: none;
+	}
+	.upgrade:hover {
+		filter: brightness(1.08);
+	}
+	.upgrade:active {
+		transform: translate(-50%, -50%) scale(0.9);
+	}
+	.upgrade.attached:active {
+		transform: translate(35%, -115%) scale(0.9);
+	}
+	@keyframes upgrade-pop {
+		0%, 100% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 0 rgba(46, 158, 91, 0); }
+		50% { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45), 0 0 0 4px rgba(46, 158, 91, 0.25); }
 	}
 	.body {
 		flex: 1;
