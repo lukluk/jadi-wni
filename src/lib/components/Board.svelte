@@ -133,8 +133,8 @@
 		const groups = new Map();
 		for (const [k, own] of Object.entries(game.tiles)) {
 			const owner = playerById[own.owner];
-			// hanya penanda aset milik pemain sendiri yang ditampilkan; pemain lain tidak melihat penanda ini
-			if (!owner || owner.bankrupt || owner.id !== meId) continue;
+			// penanda kepemilikan semua pemain ditampilkan (avatar mini berwarna + garis ke tiap asetnya)
+			if (!owner || owner.bankrupt) continue;
 			const t = TILES[+k];
 			const e = edge(+k);
 			const key = `${owner.id}|${t.group ?? t.type}|${e.side}`;
