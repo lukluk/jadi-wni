@@ -33,12 +33,23 @@
 	<title>Jadi WNI — Monopoli kehidupan</title>
 </svelte:head>
 
-<div class="ticker" aria-hidden="true">
-	<div class="track">
-		{#each [0, 1] as _}
-			<span>🎲 Lempar dadu</span><span>🏠 Beli kota</span><span>💸 Bayar cicilan</span><span>📈 Main saham</span><span>🎰 Judol</span><span>🚔 Sogok aparat</span><span>💬 Netizen +62</span><span>👑 Kaya 10 M menang</span>
-		{/each}
+<!-- Pemandangan: langit, awan, matahari, bukit -->
+<div class="scene" aria-hidden="true">
+	<div class="sun"></div>
+	<div class="clouds">
+		<span class="cloud c1"></span>
+		<span class="cloud c2"></span>
+		<span class="cloud c3"></span>
+		<span class="cloud c4"></span>
+		<span class="cloud c5"></span>
+		<span class="cloud c6"></span>
 	</div>
+	<div class="birds"><span>︶</span><span>︶</span><span>︶</span></div>
+	<svg class="hills" viewBox="0 0 1440 320" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+		<path class="hill-far" d="M0 220 C 180 150 320 170 480 200 C 700 240 820 150 1040 180 C 1240 206 1340 170 1440 190 L1440 320 L0 320 Z" />
+		<path class="hill-near" d="M0 260 C 160 210 300 250 460 250 C 680 250 760 210 980 240 C 1180 266 1320 236 1440 250 L1440 320 L0 320 Z" />
+	</svg>
+	<div class="ground"></div>
 </div>
 
 <main>
@@ -56,7 +67,7 @@
 					<dt>Pekerjaan</dt>
 					<dd>Lempar dadu, bayar cicilan</dd>
 					<dt>Status</dt>
-					<dd>Dari Rumah Subsidi menuju Rumah OKB</dd>
+					<dd>Dari Rumah Subsidi ke Rumah OKB</dd>
 					<dt>Berlaku</dt>
 					<dd>Sampai bangkrut</dd>
 				</dl>
@@ -65,8 +76,8 @@
 			<div class="dice" aria-hidden="true"><i>⚀</i><i>⚃</i></div>
 		</div>
 		<p class="lede">
-			Beli kota, kena <b>Musibah</b>, dapat <b>Takdir</b>, bangun rumah, dan jangan sampai saldo
-			minus. Hidup itu keras, untung ada teman.
+			Beli kota, kena <b>Musibah</b>, dapat <b>Takdir</b>, bangun rumah, main saham, cobain judol,
+			sampai jadi sultan Rp 10 M. Hidup itu keras — untung ada teman.
 		</p>
 		<ul class="chips" aria-label="Fitur">
 			<li>📈 Saham</li>
@@ -120,57 +131,205 @@
 			{/if}
 		{/if}
 		{#if error}<p class="error" role="alert">{error}</p>{/if}
-	</section>
 
-	<section class="steps" aria-label="Cara main">
-		<div><b>1</b><span>Buat room & kirim link ke teman</span></div>
-		<div><b>2</b><span>Lempar dadu, beli kota, bangun rumah</span></div>
-		<div><b>3</b><span>Capai kekayaan Rp 10 M sebelum bangkrut</span></div>
+		<div class="how">
+			<div><b>1</b><span>Buat room & bagikan link</span></div>
+			<div><b>2</b><span>Lempar dadu, beli & bangun</span></div>
+			<div><b>3</b><span>Kaya Rp 10 M = menang</span></div>
+		</div>
 	</section>
 
 	<section class="levels" aria-label="Level rumah">
 		{#each HOUSE_LEVELS.slice(1) as lvl, i}
-			<div class="lvl" style:--h={`${40 + i * 18}px`} style:--d={`${i * 0.4}s`}>
+			<div class="lvl" style:--h={`${34 + i * 15}px`} style:--d={`${i * 0.45}s`}>
 				<span class="ico">{lvl.icon}</span>
-				<span>{lvl.name}</span>
+				<span class="nm">{lvl.name}</span>
 			</div>
 		{/each}
 	</section>
 </main>
 
 <style>
-	.ticker {
-		background: var(--ink);
-		color: var(--angkot);
+	/* ---------- Pemandangan ---------- */
+	.scene {
+		position: fixed;
+		inset: 0;
+		z-index: -1;
 		overflow: hidden;
-		white-space: nowrap;
-		font-weight: 700;
-		font-size: 0.9rem;
-		border-bottom: 3px solid var(--merah);
+		background: linear-gradient(
+			180deg,
+			#2a7bc4 0%,
+			#53a3dd 28%,
+			#8fcbe8 52%,
+			#c7e8f3 70%,
+			#eaf7ef 86%,
+			#f3fbe9 100%
+		);
 	}
-	.track {
-		display: inline-flex;
-		gap: 2.5rem;
-		padding: 0.5rem 1.25rem;
-		animation: scroll 40s linear infinite;
+	.sun {
+		position: absolute;
+		top: 8%;
+		right: 12%;
+		width: 150px;
+		height: 150px;
+		border-radius: 50%;
+		background: radial-gradient(circle, #fff6d6 0%, #ffe27a 45%, rgba(255, 222, 92, 0) 72%);
+		filter: blur(2px);
+		animation: pulse 7s ease-in-out infinite;
 	}
-	@keyframes scroll {
-		to {
-			transform: translateX(-50%);
+	@keyframes pulse {
+		50% {
+			transform: scale(1.12);
+			opacity: 0.9;
 		}
 	}
+	.clouds {
+		position: absolute;
+		inset: 0;
+	}
+	.cloud {
+		position: absolute;
+		left: 0;
+		width: 120px;
+		height: 40px;
+		background: #fff;
+		border-radius: 40px;
+		opacity: 0.92;
+		box-shadow: 0 10px 24px rgba(40, 90, 140, 0.12);
+		animation: drift linear infinite;
+	}
+	.cloud::before,
+	.cloud::after {
+		content: '';
+		position: absolute;
+		background: #fff;
+		border-radius: 50%;
+	}
+	.cloud::before {
+		width: 56px;
+		height: 56px;
+		top: -24px;
+		left: 16px;
+	}
+	.cloud::after {
+		width: 78px;
+		height: 78px;
+		top: -40px;
+		left: 48px;
+	}
+	@keyframes drift {
+		from {
+			transform: translateX(-20vw) scale(var(--s));
+		}
+		to {
+			transform: translateX(118vw) scale(var(--s));
+		}
+	}
+	.c1 {
+		top: 9%;
+		--s: 0.6;
+		opacity: 0.75;
+		animation-duration: 72s;
+		animation-delay: -12s;
+	}
+	.c2 {
+		top: 17%;
+		--s: 1;
+		animation-duration: 56s;
+		animation-delay: -30s;
+	}
+	.c3 {
+		top: 27%;
+		--s: 0.8;
+		opacity: 0.85;
+		animation-duration: 88s;
+		animation-delay: -6s;
+	}
+	.c4 {
+		top: 41%;
+		--s: 1.35;
+		animation-duration: 50s;
+		animation-delay: -22s;
+	}
+	.c5 {
+		top: 56%;
+		--s: 0.5;
+		opacity: 0.6;
+		animation-duration: 98s;
+		animation-delay: -64s;
+	}
+	.c6 {
+		top: 13%;
+		--s: 1.1;
+		opacity: 0.8;
+		animation-duration: 64s;
+		animation-delay: -46s;
+	}
+	.birds {
+		position: absolute;
+		top: 34%;
+		left: 0;
+		display: flex;
+		gap: 10px;
+		color: rgba(20, 33, 61, 0.45);
+		font-size: 20px;
+		animation: fly 60s linear infinite;
+	}
+	.birds span:nth-child(2) {
+		transform: translateY(-6px) scale(0.8);
+	}
+	.birds span:nth-child(3) {
+		transform: translateY(3px) scale(0.9);
+	}
+	@keyframes fly {
+		from {
+			transform: translateX(-10vw) translateY(0);
+		}
+		50% {
+			transform: translateX(55vw) translateY(-20px);
+		}
+		to {
+			transform: translateX(120vw) translateY(10px);
+		}
+	}
+	.hills {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 72px;
+		width: 100%;
+		height: 42vh;
+		min-height: 220px;
+	}
+	.hill-far {
+		fill: #bfe3a6;
+	}
+	.hill-near {
+		fill: #86c56a;
+	}
+	.ground {
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: 0;
+		height: 76px;
+		background: linear-gradient(180deg, #6fb457, #5a9e46);
+		border-top: 3px solid rgba(20, 33, 61, 0.15);
+	}
+
+	/* ---------- Tata letak ---------- */
 	main {
-		max-width: 1020px;
+		max-width: 1040px;
 		margin: 0 auto;
-		padding: 2.5rem 1rem 4rem;
+		padding: 2.5rem 1rem 5rem;
 		display: grid;
-		grid-template-columns: 1.3fr 1fr;
+		grid-template-columns: 1.25fr 1fr;
 		gap: 2.5rem;
 		align-items: start;
 	}
 	.hero {
 		display: grid;
-		gap: 1.4rem;
+		gap: 1.3rem;
 	}
 	.badge {
 		justify-self: start;
@@ -178,7 +337,7 @@
 		background: var(--angkot);
 		border: 2px solid var(--ink);
 		border-radius: 999px;
-		padding: 0.25rem 0.8rem;
+		padding: 0.3rem 0.9rem;
 		font-weight: 700;
 		font-size: 0.85rem;
 		box-shadow: 0 3px 0 var(--ink);
@@ -186,17 +345,17 @@
 	.ktp {
 		position: relative;
 		background:
-			radial-gradient(circle at 85% 20%, rgba(255, 255, 255, 0.6), transparent 40%),
+			radial-gradient(circle at 85% 18%, rgba(255, 255, 255, 0.7), transparent 42%),
 			repeating-linear-gradient(115deg, transparent 0 14px, rgba(20, 33, 61, 0.04) 14px 15px),
-			linear-gradient(160deg, #e9f6f9, #b7dce5 70%, #a6d1dc);
+			linear-gradient(160deg, #eef9fb, #c0e2ea 72%, #aed6e0);
 		border: 2px solid var(--ink);
 		border-radius: 18px;
-		box-shadow: 8px 8px 0 var(--ink);
+		box-shadow: 10px 10px 0 var(--ink);
 		transform: rotate(-1.5deg);
 		transition: transform 0.25s;
 	}
 	.ktp:hover {
-		transform: rotate(0.5deg) translateY(-4px);
+		transform: rotate(0.4deg) translateY(-4px);
 	}
 	.ktp-head {
 		display: flex;
@@ -226,7 +385,7 @@
 	h1 {
 		grid-column: 1 / -1;
 		margin: 0 0 0.4rem;
-		font-size: clamp(3.2rem, 10vw, 6rem);
+		font-size: clamp(3.2rem, 9vw, 5.4rem);
 		line-height: 0.9;
 		font-weight: 800;
 		letter-spacing: -0.03em;
@@ -290,7 +449,7 @@
 		border: 2px solid var(--ink);
 		border-radius: 10px;
 		padding: 0 0.1em;
-		animation: tumble 3.2s ease-in-out infinite;
+		animation: tumble 3.4s ease-in-out infinite;
 	}
 	.dice i:last-child {
 		animation-delay: 0.6s;
@@ -309,10 +468,15 @@
 		}
 	}
 	.lede {
-		font-size: 1.2rem;
-		line-height: 1.45;
-		max-width: 46ch;
-		margin: 0.6rem 0 0;
+		font-size: 1.15rem;
+		line-height: 1.5;
+		max-width: 48ch;
+		margin: 0.4rem 0 0;
+		background: rgba(255, 253, 246, 0.72);
+		backdrop-filter: blur(3px);
+		border: 2px solid rgba(20, 33, 61, 0.12);
+		border-radius: var(--radius-m);
+		padding: 0.85rem 1rem;
 	}
 	.chips {
 		list-style: none;
@@ -326,33 +490,35 @@
 		background: var(--paper);
 		border: 2px solid var(--ink);
 		border-radius: 999px;
-		padding: 0.25rem 0.8rem;
+		padding: 0.28rem 0.85rem;
 		font-weight: 700;
 		font-size: 0.9rem;
+		box-shadow: 0 2px 0 var(--ink);
 	}
+
+	/* ---------- Panel login ---------- */
 	.panel {
-		background: var(--paper);
+		background: rgba(255, 253, 246, 0.92);
+		backdrop-filter: blur(6px);
 		border: 2px solid var(--ink);
 		border-radius: var(--radius-m);
-		box-shadow: 6px 6px 0 var(--ink);
-		padding: 1.5rem;
+		box-shadow: 8px 8px 0 var(--ink);
+		padding: 1.4rem 1.5rem 1.6rem;
 		display: grid;
 		gap: 1rem;
-		margin-top: 2.6rem;
 		position: relative;
+		overflow: hidden;
 	}
 	.panel::before {
 		content: '';
 		position: absolute;
 		inset: 0 0 auto;
-		height: 10px;
-		background: repeating-linear-gradient(90deg, var(--merah) 0 20px, #fff 20px 40px);
-		border-bottom: 2px solid var(--ink);
-		border-radius: 10px 10px 0 0;
+		height: 8px;
+		background: repeating-linear-gradient(90deg, var(--merah) 0 22px, #fff 22px 44px);
 	}
 	h2 {
-		margin: 0.5rem 0 0;
-		font-size: 1.6rem;
+		margin: 0.4rem 0 0;
+		font-size: 1.55rem;
 		letter-spacing: -0.02em;
 	}
 	.big {
@@ -432,49 +598,50 @@
 		color: var(--merah-deep);
 		font-weight: 600;
 	}
-	.steps {
-		grid-column: 1 / -1;
+	.how {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
-		gap: 1rem;
+		gap: 0.5rem;
+		margin-top: 0.3rem;
+		padding-top: 0.9rem;
+		border-top: 2px dashed var(--line);
 	}
-	.steps div {
+	.how div {
 		display: flex;
 		align-items: center;
-		gap: 0.8rem;
-		background: var(--paper);
-		border: 2px solid var(--ink);
-		border-radius: var(--radius-m);
-		padding: 0.8rem 1rem;
+		gap: 0.7rem;
 		font-weight: 600;
-		line-height: 1.3;
+		font-size: 0.95rem;
 	}
-	.steps b {
+	.how b {
 		flex: none;
-		width: 2.2rem;
-		height: 2.2rem;
+		width: 1.9rem;
+		height: 1.9rem;
 		display: grid;
 		place-items: center;
 		background: var(--angkot);
 		border: 2px solid var(--ink);
 		border-radius: 50%;
-		font-size: 1.1rem;
+		font-size: 1rem;
 	}
+
+	/* ---------- Deretan rumah di atas tanah ---------- */
 	.levels {
 		grid-column: 1 / -1;
+		margin-top: 1.5rem;
 		display: flex;
 		align-items: flex-end;
-		gap: 0.75rem;
-		border-bottom: 3px solid var(--ink);
-		padding-bottom: 0.5rem;
-		overflow-x: auto;
+		justify-content: center;
+		flex-wrap: wrap;
+		gap: 1rem 1.6rem;
 	}
 	.lvl {
 		display: grid;
 		justify-items: center;
 		gap: 0.2rem;
 		font-weight: 700;
-		font-size: 0.9rem;
+		font-size: 0.85rem;
+		color: var(--ink);
+		text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
 		white-space: nowrap;
 		animation: bob 3s ease-in-out infinite var(--d);
 	}
@@ -486,17 +653,21 @@
 	.ico {
 		font-size: var(--h);
 		line-height: 1;
+		filter: drop-shadow(0 4px 3px rgba(20, 33, 61, 0.25));
 	}
-	@media (max-width: 760px) {
+	.nm {
+		background: rgba(255, 253, 246, 0.8);
+		padding: 0.1rem 0.5rem;
+		border-radius: 999px;
+	}
+
+	@media (max-width: 820px) {
 		main {
 			grid-template-columns: 1fr;
 			padding-top: 1.5rem;
 		}
-		.panel {
-			margin-top: 0;
-		}
-		.steps {
-			grid-template-columns: 1fr;
+		.hills {
+			height: 32vh;
 		}
 		.ktp,
 		.ktp:hover {
