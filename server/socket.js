@@ -16,6 +16,7 @@ import {
 } from './game/engine.js';
 import { TOKENS } from '../src/lib/shared/board.js';
 import { refreshCityImages } from './cityImages.js';
+import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
 import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 
@@ -66,7 +67,19 @@ function voiceMembers(io, code) {
 	const ids = [...(io.sockets.adapter.rooms.get(voiceRoom(code)) ?? [])].map((sid) => io.sockets.sockets.get(sid)?.data.user.id);
 	return [...new Set(ids.filter(Boolean))];
 }
-const emitVoice = (io, code) => io.to(code).emit('voice:members', voiceMembers(io, code));
+const emitVoice = (io, code) => {
+	io.to(code).emit('voice:members', voiceMembers(io, code));
+	io.to(code).emit('voice:states', voiceStates(io, code));
+};
+/** status mic/kamera tiap anggota suara: userId -> { muted, cam } */
+function voiceStates(io, code) {
+	const out = {};
+	for (const sid of io.sockets.adapter.rooms.get(voiceRoom(code)) ?? []) {
+		const d = io.sockets.sockets.get(sid)?.data;
+		if (d?.user) out[d.user.id] = d.vstate ?? { muted: false, cam: false };
+	}
+	return out;
+}
 
 function errMsg(e) {
 	if (e instanceof GameError) return e.message;
@@ -78,6 +91,7 @@ function errMsg(e) {
 export function attachSocket(httpServer) {
 	const io = new Server(httpServer, { path: '/socket.io' });
 	refreshCityImages();
+	refreshTileLogos();
 
 	// batas waktu tagihan sewa: habis = menyerah
 	setInterval(() => {
@@ -319,7 +333,23 @@ export function attachSocket(httpServer) {
 		);
 
 		socket.on('voice:leave', leaveVoice);
-		socket.on('voice:query', (_p, ack) => ack?.({ members: joined ? voiceMembers(io, joined) : [] }));
+		socket.on('voice:state', (msg) => {
+			if (!inVoice) return;
+			socket.data.vstate = { muted: !!msg?.muted, cam: !!msg?.cam };
+			io.to(joined).emit('voice:states', voiceStates(io, inVoice));
+		});
+		// host boleh mematikan mic/kamera pemain lain (menyalakan kembali tetap oleh pemilik)
+		socket.on('voice:control', (msg) => {
+			const state = joined && rooms.get(joined);
+			if (!state || state.hostId !== user.id || !inVoice) return;
+			if (msg?.kind !== 'mic' && msg?.kind !== 'cam') return;
+			for (const sid of io.sockets.adapter.rooms.get(voiceRoom(inVoice)) ?? []) {
+				if (io.sockets.sockets.get(sid)?.data.user.id === msg.userId) io.to(sid).emit('voice:control', { kind: msg.kind });
+			}
+		});
+		socket.on('voice:query', (_p, ack) =>
+			ack?.({ members: joined ? voiceMembers(io, joined) : [], states: joined ? voiceStates(io, joined) : {} })
+		);
 
 		socket.on('disconnect', leaveCurrent);
 	});

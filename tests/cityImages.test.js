@@ -42,3 +42,30 @@ test('parse respons Wikipedia + Commons (redirect, normalisasi, non-commons dibu
 	assert.equal(r.Bekasi.page, 'https://commons.wikimedia.org/wiki/File:Bekasi_skyline.jpg');
 	assert.equal(r.BSD.credit, 'Wikimedia Commons');
 });
+
+import { fetchTileLogos, LOGO_FILES } from '../server/tileLogos.js';
+
+test('semua logo petak merujuk ke petak yang ada (stasiun, utilitas, atau pojok Bansos)', () => {
+	for (const name of Object.keys(LOGO_FILES)) {
+		const t = TILES.find((x) => x.name === name);
+		assert.ok(t && ['station', 'utility', 'bansos'].includes(t.type), name);
+	}
+});
+
+test('parse respons Commons untuk logo petak', async () => {
+	const fake = async (url) => {
+		assert.equal(new URL(url).hostname, 'commons.wikimedia.org');
+		return Response.json({
+			query: {
+				pages: [
+					{ title: 'File:Logo PLN.svg', imageinfo: [{ thumburl: 'https://upload.wikimedia.org/x/200px-Logo_PLN.svg.png', descriptionurl: 'https://commons.wikimedia.org/wiki/File:Logo_PLN.svg', extmetadata: { Artist: { value: 'PLN' }, LicenseShortName: { value: 'Public domain' } } }] },
+					{ title: 'File:TransJakarta Logo.svg', missing: true }
+				]
+			}
+		});
+	};
+	const r = await fetchTileLogos(fake);
+	assert.deepEqual(Object.keys(r), ['PLN']);
+	assert.equal(r.PLN.license, 'Public domain');
+	assert.equal(r.PLN.credit, 'PLN');
+});

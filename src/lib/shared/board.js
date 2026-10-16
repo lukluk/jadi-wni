@@ -4,7 +4,7 @@
 export const START_MONEY = 1500;
 export const SALARY = 200;
 export const JAIL_FINE = 50;
-export const JAIL_INDEX = 10;
+export const JAIL_INDEX = 13; // pojok kiri-bawah papan 14x8
 export const MAX_PLAYERS = 6;
 export const MIN_PLAYERS = 2;
 
@@ -77,10 +77,10 @@ export const TILES = [
 	{ type: 'musibah', name: 'Musibah' },
 	p('Bogor', 'biru', 100, [6, 30, 90, 270, 550]),
 	p('Tangerang', 'biru', 120, [8, 40, 100, 300, 600]),
-	{ type: 'jail', name: 'Ruang Sidang Tilang', short: 'Sidang', desc: 'Cuma lewat, aman.' },
 	p('Semarang', 'pink', 140, [10, 50, 150, 450, 750]),
 	{ type: 'utility', name: 'PLN', price: 150 },
 	p('Solo', 'pink', 140, [10, 50, 150, 450, 750]),
+	{ type: 'jail', name: 'Ruang Sidang Tilang', short: 'Sidang', desc: 'Cuma lewat, aman.' },
 	p('Yogyakarta', 'pink', 160, [12, 60, 180, 500, 900], 'Jogja'),
 	{ type: 'station', name: 'Transjakarta', short: 'TJ', price: 200 },
 	p('Malang', 'oranye', 180, [14, 70, 200, 550, 950]),
@@ -97,10 +97,10 @@ export const TILES = [
 	p('Labuan Bajo', 'kuning', 260, [22, 110, 330, 800, 1150], 'L. Bajo'),
 	{ type: 'utility', name: 'PDAM', price: 150 },
 	p('Raja Ampat', 'kuning', 280, [24, 120, 360, 850, 1200], 'R. Ampat'),
-	{ type: 'gotojail', name: 'Kena Razia!', short: 'Razia', desc: 'Langsung ke Ruang Sidang Tilang' },
 	p('BSD', 'hijau', 300, [26, 130, 390, 900, 1275]),
 	p('PIK', 'hijau', 300, [26, 130, 390, 900, 1275]),
 	{ type: 'takdir', name: 'Takdir' },
+	{ type: 'gotojail', name: 'Kena Razia!', short: 'Razia', desc: 'Langsung ke Ruang Sidang Tilang' },
 	p('Kemang', 'hijau', 320, [28, 150, 450, 1000, 1400]),
 	{ type: 'station', name: 'Whoosh', short: 'Whoosh', price: 200 },
 	{ type: 'musibah', name: 'Musibah' },
@@ -243,21 +243,6 @@ export const SLOT_SYMBOLS = ['7️⃣', '💎', '🍒', '🍋', '🔔', '💀'];
 
 /** kekayaan bersih (uang + aset + saham) segini = langsung menang (Rp 10 M) */
 export const WIN_NETWORTH = 10000;
-
-/** Sogok aparat: pemain berduit >= Rp 2 M bisa memaksa pemilik menjual asetnya */
-export const SOGOK_MIN_MONEY = 2000;
-export const SOGOK_FEE = 1000; // uang sogok ke aparat (Kas Negara), tetap Rp 1 M, di luar harga aset
-export const SOGOK_RISK = 0.2; // peluang ketahuan KPK
-
-/** harga asli aset (petak + bangunan) yang dibayar ke pemilik saat dipaksa jual, belum termasuk uang sogok */
-export function sogokPrice(state, tileIdx) {
-	const tile = TILES[tileIdx];
-	const own = state.tiles[tileIdx];
-	if (!tile || !own) return 0;
-	const built = tile.type === 'property' ? investedCost(GROUPS[tile.group].houseCost, own.level) : 0;
-	return tile.price + built;
-}
-export const sogokFee = () => SOGOK_FEE;
 
 export const formatRp = (n) => `${n < 0 ? '-' : ''}Rp ${formatAmt(n)}`;
 

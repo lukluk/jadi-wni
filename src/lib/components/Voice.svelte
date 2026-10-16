@@ -1,13 +1,27 @@
 <script>
 	import { onMount } from 'svelte';
 	import { getSocket } from '$lib/socket.js';
+	import { isMuted, setMuted, play } from '$lib/sound.js';
 
-	/** @type {{ meId: string, players?: {id:string, name:string, color:string}[], speaking?: Record<string, boolean>, members?: string[] }} */
-	let { meId, players = [], speaking = $bindable({}), members = $bindable([]) } = $props();
+	/** @type {{ meId: string, canVoice?: boolean, players?: {id:string, name:string, color:string}[], speaking?: Record<string, boolean>, members?: string[] }} */
+	let { meId, canVoice = true, players = [], speaking = $bindable({}), members = $bindable([]), streams = $bindable({}), states = $bindable({}), isHost = false } = $props();
 
 	// STUN publik; kalau ada pemain di jaringan ketat (NAT simetris) butuh server TURN sendiri
 	const ICE = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }] };
 	const SPEAK_LEVEL = 0.035;
+
+	// pengaturan (ikon melayang -> modal): efek suara game + obrolan suara/mic/kamera
+	let open = $state(false);
+	let dialog = $state();
+	let sfxMuted = $state(isMuted());
+	$effect(() => {
+		if (open) dialog?.showModal();
+	});
+	function toggleSfx() {
+		sfxMuted = !sfxMuted;
+		setMuted(sfxMuted);
+		if (!sfxMuted) play('notif');
+	}
 
 	let joined = $state(false);
 	let muted = $state(false);
@@ -19,7 +33,6 @@
 	let selfCam = $state(null);
 	/** @type {{sid:string, userId:string, stream:MediaStream, hasVideo:boolean}[]} */
 	let peers = $state([]);
-	const nameOf = (id) => players.find((p) => p.id === id)?.name ?? 'Pemain';
 
 	/** @type {Map<string, RTCPeerConnection>} */
 	const pcs = new Map();
@@ -36,6 +49,27 @@
 	let meterTimer;
 
 	const sock = () => getSocket();
+
+	// stream video per pemain (untuk avatar) + status mic/kamera semua anggota
+	$effect(() => {
+		const out = {};
+		for (const p of peers) if (p.hasVideo) out[p.userId] = p.stream;
+		if (selfCam) out[meId] = selfCam;
+		streams = out;
+	});
+	// kabari room soal status mic/kamera kita
+	$effect(() => {
+		if (joined) sock().emit('voice:state', { muted: muted || noMic, cam: camOn });
+	});
+
+	/** kontrol dari kartu pemain: diri sendiri langsung, pemain lain lewat host */
+	export function control(userId, kind) {
+		if (userId === meId && kind === 'leave') return cleanup(true);
+		if (userId === meId && kind === 'join') return joined ? undefined : join();
+		if (userId === meId) return kind === 'mic' ? toggleMute() : toggleCamera();
+		if (isHost) sock().emit('voice:control', { userId, kind });
+	}
+	export const isJoined = () => joined;
 
 	function addMeter(key, userId, stream) {
 		try {
@@ -250,94 +284,151 @@
 		const s = sock();
 		const onMembers = (list) => (members = list);
 		const onLeft = ({ sid }) => dropPeer(sid);
+		const onStates = (m) => (states = m);
+		const onControl = ({ kind }) => {
+			if (kind === 'mic' && joined && !muted && !noMic) toggleMute();
+			else if (kind === 'cam' && camOn) toggleCamera();
+		};
 		const onDisconnect = () => cleanup(false);
+		s.on('voice:states', onStates);
+		s.on('voice:control', onControl);
 		s.on('voice:signal', onSignal);
 		s.on('voice:peer-left', onLeft);
 		s.on('voice:members', onMembers);
 		s.on('disconnect', onDisconnect);
-		s.emit('voice:query', null, (r) => r?.members && (members = r.members));
+		s.emit('voice:query', null, (r) => {
+			if (r?.members) members = r.members;
+			if (r?.states) states = r.states;
+		});
 		return () => {
 			s.off('voice:signal', onSignal);
 			s.off('voice:peer-left', onLeft);
 			s.off('voice:members', onMembers);
+			s.off('voice:states', onStates);
+			s.off('voice:control', onControl);
 			s.off('disconnect', onDisconnect);
 			cleanup(true);
 		};
 	});
 </script>
 
-<div class="voice">
-	{#if !joined}
-		<button class="vbtn" onclick={join} disabled={busy} aria-label="Gabung obrolan suara" title="Gabung obrolan suara">
-			🎙️ {busy ? 'Menyambung…' : 'Gabung suara'}{#if members.length}<span class="cnt">{members.length}</span>{/if}
-		</button>
-	{:else}
-		<button class="vbtn on" class:muted onclick={toggleMute} aria-pressed={muted} title={muted ? 'Mikrofon mati' : 'Mikrofon nyala'}>
-			{noMic ? '🔇 Tanpa mic' : muted ? '🔇 Mic mati' : '🎙️ Mic nyala'}
-		</button>
-		<button class="vbtn on" class:muted={!camOn} onclick={toggleCamera} aria-pressed={camOn} title="Kamera (opsional)">{camOn ? '📷 Kamera nyala' : '📷 Kamera'}</button>
-		<button class="vbtn" onclick={() => cleanup(true)} title="Keluar dari obrolan suara">Keluar suara</button>
-	{/if}
-	{#if error}<span class="verr" role="alert">{error}</span>{/if}
-</div>
+<button class="gear" onclick={() => (open = true)} aria-label="Pengaturan" title="Pengaturan">
+	⚙️
+</button>
 
-<!-- wajah-wajah kecil di bawah; peer tanpa kamera tetap punya elemen untuk memutar audio (disembunyikan) -->
-<div class="faces" class:empty={!camOn && !peers.some((p) => p.hasVideo)}>
-	{#if selfCam}
-		<figure class="face self" class:talk={speaking[meId]}>
-			<video use:attach={selfCam} autoplay playsinline muted></video>
-			<figcaption>Kamu</figcaption>
-		</figure>
-	{/if}
+{#if open}
+	<dialog bind:this={dialog} onclose={() => (open = false)} onclick={(e) => e.target === dialog && dialog.close()}>
+		<div class="sheet">
+			<h3>⚙️ Pengaturan</h3>
+
+			<div class="row">
+				<span class="lbl">🔊 Efek suara game</span>
+				<button class="sw" class:on={!sfxMuted} onclick={toggleSfx} role="switch" aria-checked={!sfxMuted}>{sfxMuted ? 'Mati' : 'Nyala'}</button>
+			</div>
+
+			<button class="close" onclick={() => dialog.close()} aria-label="Tutup">✕</button>
+		</div>
+	</dialog>
+{/if}
+
+{#if error}
+	<button class="verr toast" onclick={() => (error = '')}>{error}</button>
+{/if}
+
+<!-- elemen pemutar audio peer (disembunyikan); video tampil di avatar PlayerCard -->
+<div class="faces">
 	{#each peers as p (p.sid)}
-		<figure class="face" class:novideo={!p.hasVideo} class:talk={speaking[p.userId]}>
-			<video use:attach={p.stream} autoplay playsinline></video>
-			<figcaption>{nameOf(p.userId)}</figcaption>
-		</figure>
+		<video use:attach={p.stream} autoplay playsinline></video>
 	{/each}
 </div>
 
 <style>
-	.voice {
+	/* ikon pengaturan: ujung kanan bar ticker di paling bawah */
+	.gear {
 		position: fixed;
-		left: 3.9rem;
-		bottom: 0.75rem;
-		z-index: 60;
-		display: flex;
-		gap: 0.4rem;
-		align-items: center;
-		flex-wrap: wrap;
-		max-width: calc(100vw - 5rem);
-	}
-	.vbtn {
-		height: 2.4rem;
-		padding: 0 0.75rem;
-		border-radius: 999px;
+		right: 0.35rem;
+		bottom: 0.2rem;
+		z-index: 71;
+		width: 1.8rem;
+		height: 1.8rem;
+		padding: 0;
+		border-radius: 50%;
 		border: 2px solid var(--ink);
 		background: #fff;
+		box-shadow: 1px 1px 0 var(--ink);
+		font-size: 0.95rem;
+		line-height: 1;
+		cursor: pointer;
+	}
+	dialog {
+		border: 0;
+		padding: 0;
+		background: transparent;
+		max-width: min(400px, calc(100vw - 2rem));
+		width: 100%;
+	}
+	dialog::backdrop {
+		background: rgba(20, 33, 61, 0.45);
+	}
+	.sheet {
+		position: relative;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 12px;
+		box-shadow: 6px 6px 0 var(--ink);
+		padding: 1rem;
+		display: grid;
+		gap: 0.7rem;
+	}
+	.sheet h3 {
+		margin: 0;
+		padding-right: 2rem;
+	}
+	.row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.6rem;
+	}
+	.lbl {
+		font-weight: 700;
+	}
+	.sw {
+		min-width: 5.2rem;
+		height: 2.2rem;
+		padding: 0 0.8rem;
+		border-radius: 999px;
+		border: 2px solid var(--ink);
+		background: #fde0dc;
 		box-shadow: 2px 2px 0 var(--ink);
 		font-weight: 800;
 		font-size: 0.8rem;
 		cursor: pointer;
-		display: inline-flex;
-		align-items: center;
-		gap: 0.3rem;
 	}
-	.vbtn.on {
+	.sw.on {
 		background: #d8f5e2;
 	}
-	.vbtn.on.muted {
-		background: #fde0dc;
-	}
-	.vbtn:disabled {
+	.sw:disabled {
 		opacity: 0.6;
 	}
-	.cnt {
-		background: var(--merah);
-		color: #fff;
-		border-radius: 999px;
-		padding: 0 0.4rem;
-		font-size: 0.7rem;
+	.close {
+		position: absolute;
+		top: 0.5rem;
+		right: 0.5rem;
+		width: 2rem;
+		height: 2rem;
+		border: 2px solid var(--ink);
+		border-radius: 50%;
+		background: #fff;
+		cursor: pointer;
+	}
+	.toast {
+		position: fixed;
+		left: 50%;
+		bottom: 3rem;
+		transform: translateX(-50%);
+		z-index: 80;
+		cursor: pointer;
 	}
 	.verr {
 		background: #fde0dc;
@@ -348,76 +439,6 @@
 		font-weight: 700;
 	}
 	.faces {
-		position: fixed;
-		left: 0.75rem;
-		bottom: 7rem;
-		z-index: 59;
-		display: flex;
-		gap: 0.4rem;
-		max-width: calc(100vw - 1.5rem);
-		overflow-x: auto;
-		pointer-events: none;
-	}
-	@media (max-width: 520px) {
-		.voice {
-			max-width: calc(100vw - 8.2rem);
-			gap: 0.3rem;
-		}
-		.vbtn {
-			height: 2.2rem;
-			padding: 0 0.55rem;
-			font-size: 0.72rem;
-		}
-		.faces {
-			bottom: 6.2rem; /* tombol suara bisa membungkus jadi 2 baris */
-		}
-		.face {
-			width: 5rem;
-		}
-	}
-	.faces.empty {
 		display: none;
-	}
-	.face {
-		margin: 0;
-		position: relative;
-		width: 6.2rem;
-		aspect-ratio: 4 / 3;
-		border: 2px solid var(--ink);
-		border-radius: 10px;
-		overflow: hidden;
-		background: #222;
-		box-shadow: 2px 2px 0 var(--ink);
-		flex: none;
-	}
-	.face.novideo {
-		display: none;
-	}
-	.face.talk {
-		border-color: #1f8a4c;
-		box-shadow: 0 0 0 3px #1f8a4c;
-	}
-	.face video {
-		width: 100%;
-		height: 100%;
-		object-fit: cover;
-		display: block;
-	}
-	.face.self video {
-		transform: scaleX(-1);
-	}
-	.face figcaption {
-		position: absolute;
-		left: 0;
-		right: 0;
-		bottom: 0;
-		padding: 0 0.3rem;
-		font-size: 0.65rem;
-		font-weight: 700;
-		color: #fff;
-		background: rgba(0, 0, 0, 0.55);
-		white-space: nowrap;
-		overflow: hidden;
-		text-overflow: ellipsis;
 	}
 </style>

@@ -3,7 +3,7 @@ import { netWorth } from './game/engine.js';
 import './config.js';
 
 /** Netizen AI: tiap 5 menit baca kondisi semua pemain lalu "netizen" mengomentari + memberi saran. */
-export const NETIZEN_INTERVAL_MS = 5 * 60_000;
+export const NETIZEN_INTERVAL_MS = Number(process.env.NETIZEN_INTERVAL_MS) || 5 * 60_000;
 const MODEL = () => process.env.AI_MODEL || 'gpt-4o-mini';
 const BASE = () => (process.env.AI_BASE_URL || 'https://ai.sumopod.com').replace(/\/+$/, '').replace(/\/v1$/, '');
 const MAX_POSTS = 8;

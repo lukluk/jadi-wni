@@ -6,9 +6,10 @@
 	import Board from '$lib/components/Board.svelte';
 	import TileSheet from '$lib/components/TileSheet.svelte';
 	import PlayerCard from '$lib/components/PlayerCard.svelte';
-	import { play, isMuted, setMuted } from '$lib/sound.js';
+	import { play } from '$lib/sound.js';
 	import Voice from '$lib/components/Voice.svelte';
 	import Netizen from '$lib/components/Netizen.svelte';
+	import Rules from '$lib/components/Rules.svelte';
 	import Avatar from '$lib/components/Avatar.svelte';
 	import Market from '$lib/components/Market.svelte';
 	import Portfolio from '$lib/components/Portfolio.svelte';
@@ -25,7 +26,6 @@
 		surrenderPlan,
 		formatAmt,
 		salaryFor,
-		calendarDate,
 		SLOT_SYMBOLS
 	} from '$lib/shared/board.js';
 
@@ -49,27 +49,10 @@
 	let moving = $state(false);
 	let speaking = $state(/** @type {Record<string, boolean>} */ ({}));
 	let voiceMembers = $state(/** @type {string[]} */ ([]));
+	let voiceStreams = $state(/** @type {Record<string, MediaStream>} */ ({}));
+	let voiceStates = $state(/** @type {Record<string, {muted:boolean, cam:boolean}>} */ ({}));
+	let voice = $state();
 	let shown = $state(/** @type {Record<string, number>} */ ({}));
-
-	// kalender pribadi: GAJIAN tiap tanggal 25, tanggal mengikuti posisi bidak yang terlihat
-	const calBase = $derived(game?.calBase ?? { y: new Date().getFullYear(), m: new Date().getMonth() });
-	const calDate = $derived.by(() => {
-		const mp = game?.players.find((x) => x.id === me?.id);
-		if (!mp) return null;
-		const pos = shown[mp.id] ?? mp.pos;
-		// laps sudah naik di server saat bidak melewati GAJIAN; tahan sampai bidak yang tampil ikut menyeberang
-		const crossing = pos > mp.pos && pos - mp.pos < 20 ? 1 : 0;
-		return calendarDate(calBase, (mp.laps ?? 0) - crossing, pos);
-	});
-	const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
-	const DAYS = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'];
-	const toGajian = $derived.by(() => {
-		if (!calDate) return 0;
-		const d = calDate.getUTCDate();
-		if (d === 25) return 0;
-		const next = Date.UTC(calDate.getUTCFullYear(), calDate.getUTCMonth() + (d > 25 ? 1 : 0), 25);
-		return Math.round((next - calDate.getTime()) / 86400000);
-	});
 
 	// bidak lewat GAJIAN: PlayerCard menganimasikan gaji masuk selagi bidak berhenti
 	let salary = $state(/** @type {{id:string, amount:number, n:number}|null} */ (null));
@@ -140,6 +123,7 @@
 	let lastCardSeq = -1;
 	let logEl = $state();
 	let cityImages = $state(/** @type {Record<string, any>} */ ({}));
+	let tileLogos = $state(/** @type {Record<string, any>} */ ({}));
 	let rolling = $state(false);
 	let faces = $state([1, 1]);
 	let lastRollSeq = -1;
@@ -336,6 +320,10 @@
 			.then((r) => (r.ok ? r.json() : {}))
 			.then((m) => (cityImages = m))
 			.catch(() => {});
+		fetch('/api/tile-logos')
+			.then((r) => (r.ok ? r.json() : {}))
+			.then((m) => (tileLogos = m))
+			.catch(() => {});
 		const s = getSocket();
 		const onState = (st) => {
 			if (lastJudolSeq === -1) lastJudolSeq = st.lastJudol?.seq ?? 0;
@@ -430,13 +418,6 @@
 		return res;
 	};
 
-	// suara: positif (naik/cling) vs negatif (buzz/turun)
-	let muted = $state(isMuted());
-	function toggleMute() {
-		muted = !muted;
-		setMuted(muted);
-		if (!muted) play('notif');
-	}
 	$effect(() => {
 		if (countdown) play('tick');
 	});
@@ -577,13 +558,7 @@
 	<title>Room {data.code} · Jadi WNI</title>
 </svelte:head>
 
-<header class="top">
-	<a href="/" class="logo">Jadi WNI</a>
-	<button class="code" onclick={copyInvite} title="Salin link undangan">
-		Room <strong>{data.code}</strong>
-	</button>
-	{#if !connected}<span class="offline" role="status">Menyambung ulang…</span>{/if}
-</header>
+{#if !connected}<span class="offline" role="status">Menyambung ulang…</span>{/if}
 
 {#if joinError}
 	<main class="center-msg">
@@ -620,8 +595,15 @@
 							isMe={p.id === me?.id}
 							online={game.online.includes(p.id)}
 							isHost={p.id === game.hostId}
+							roomCode={data.code}
+							onCopyCode={copyInvite}
 							speaking={!!speaking[p.id]}
 							inVoice={voiceMembers.includes(p.id)}
+							stream={voiceStreams[p.id] ?? null}
+							micMuted={!!voiceStates[p.id]?.muted}
+							camOn={!!voiceStates[p.id]?.cam}
+							canControl={p.id === me?.id || isHost}
+							onControl={(k) => voice?.control(p.id, k)}
 						/>
 						{#if isHost && p.id !== me?.id}
 							<button class="kick" onclick={() => emit('room:kick', { userId: p.id })} aria-label={`Keluarkan ${p.name}`}>✕</button>
@@ -650,14 +632,17 @@
 {:else}
 	<main class="game">
 		<div class="board-wrap">
-			<Board {game} images={cityImages} {rolling} bind:moving bind:shown {onSalary} onTile={(i) => (selectedTile = i)}>
+			<Board {game} meId={me?.id ?? null} images={cityImages} logos={tileLogos} {rolling} bind:moving bind:shown {onSalary} onTile={(i) => (selectedTile = i)}>
 				{#snippet center()}
 					<div class="hub">
 						<div class="decks">
 							<div class="deck musibah">Musibah</div>
-							<div class="kas">
-								<small>🏛️ Kas Negara</small>
-								<strong>{formatRp(game.kasNegara)}</strong>
+							<div class="kas-col">
+								<Rules />
+								<div class="kas">
+									<small>🏛️ Kas Negara</small>
+									<strong>{formatRp(game.kasNegara)}</strong>
+								</div>
 							</div>
 							<div class="deck takdir">Takdir</div>
 						</div>
@@ -733,19 +718,7 @@
 		</div>
 
 		<aside class="side">
-			{#if calDate && myPlayer && !myPlayer.bankrupt}
-				<div class="calrow">
-				{#key calDate.getTime()}
-					<div class="cal" class:payday={toGajian === 0} aria-label={`Tanggal ${calDate.getUTCDate()} ${MONTHS[calDate.getUTCMonth()]}`}>
-						<span class="cal-top">{MONTHS[calDate.getUTCMonth()]} {calDate.getUTCFullYear()}</span>
-						<strong class="cal-day">{calDate.getUTCDate()}</strong>
-						<span class="cal-dow">{DAYS[calDate.getUTCDay()]}</span>
-					</div>
-				{/key}
-				<p class="cal-note">{toGajian === 0 ? '💰 Hari gajian!' : `Gajian tgl 25 · ${toGajian} hari lagi`}</p>
-				</div>
-			{/if}
-			<div class="cards">
+			<div class="cards" class:scroll={game.players.length > 3}>
 				{#each game.players as p, i (p.id)}
 					<div class="card-wrap">
 					<PlayerCard
@@ -753,13 +726,38 @@
 						{game}
 						speaking={!!speaking[p.id]}
 						inVoice={voiceMembers.includes(p.id)}
+							stream={voiceStreams[p.id] ?? null}
+							micMuted={!!voiceStates[p.id]?.muted}
+							camOn={!!voiceStates[p.id]?.cam}
+							canControl={p.id === me?.id || isHost}
+							onControl={(k) => voice?.control(p.id, k)}
 						isTurn={game.status === 'playing' && i === game.turn}
 						isMe={p.id === me?.id}
 						online={game.online.includes(p.id)}
 						isHost={p.id === game.hostId}
+						roomCode={data.code}
+						onCopyCode={copyInvite}
 						hold={holdMoney}
 						{salary}
 					/>
+					{#if judol && judol.playerId === p.id}
+						<div class="judol-pop" class:win={judol.done && judol.delta > 0} class:lose={judol.done && judol.delta < 0} aria-live="polite">
+							<div class="reels">
+								{#each judolReels as r, i (i)}
+									<span class="reel" class:spin={i >= judolStopped}>{r}</span>
+								{/each}
+							</div>
+							<div class="jinfo">
+								<small>🎰 Taruhan {formatRp(judol.bet)}</small>
+								{#if judol.done}
+									<strong class="jpct">{judol.pct > 0 ? '+' : ''}{judol.pct}%</strong>
+									<span class="jdelta">{judol.pct >= 90 ? '🎉 JACKPOT! ' : ''}{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
+								{:else}
+									<span class="jdelta">Memutar…</span>
+								{/if}
+							</div>
+						</div>
+					{/if}
 					{#if canStartKick && p.id !== me?.id && !p.bankrupt}
 						<button
 							class="kick vote"
@@ -808,11 +806,8 @@
 				{/if}
 			</div>
 
-			{#if game.status === 'playing'}
+			{#if game.status === 'playing' && isHost}
 				<div class="danger">
-					{#if myPlayer && !myPlayer.bankrupt}
-						<button class="btn small" onclick={surrender}>Menyerah</button>
-					{/if}
 					{#if isHost}
 						<button class="btn small" onclick={() => act({ type: 'autoPlay', on: !game.autoPlay })}>
 							{game.autoPlay ? '🤖 Matikan auto-play AI' : '🤖 Auto-play AI'}
@@ -826,24 +821,6 @@
 
 	{#if selectedTile !== null}
 		<TileSheet {game} images={cityImages} index={selectedTile} meId={me?.id} onAction={act} onClose={() => (selectedTile = null)} />
-	{/if}
-
-	{#if judol}
-		<div class="judol-pop" class:win={judol.done && judol.delta > 0} class:lose={judol.done && judol.delta < 0} aria-live="polite">
-			<span class="card-kind">🎰 Judol · {judol.playerName}</span>
-			<small>Taruhan {formatRp(judol.bet)}</small>
-			<div class="reels">
-				{#each judolReels as r, i (i)}
-					<span class="reel" class:spin={i >= judolStopped}>{r}</span>
-				{/each}
-			</div>
-			{#if judol.done}
-				<strong class="jpct">{judol.pct > 0 ? '+' : ''}{judol.pct}%</strong>
-				<span class="jdelta">{judol.pct >= 90 ? '🎉 JACKPOT! ' : ''}{judol.delta >= 0 ? 'Menang' : 'Kalah'} {formatRp(Math.abs(judol.delta))}</span>
-			{:else}
-				<span class="jdelta">Memutar…</span>
-			{/if}
-		</div>
 	{/if}
 
 	{#if card}
@@ -905,8 +882,6 @@
 	</div>
 {/if}
 
-<button class="mute" onclick={toggleMute} aria-label={muted ? 'Nyalakan suara' : 'Matikan suara'} title={muted ? 'Suara mati' : 'Suara nyala'}>{muted ? '🔇' : '🔊'}</button>
-
 {#if notifs.length}
 	<div class="notifs" aria-live="polite">
 		{#each notifs as n (n.id)}
@@ -928,42 +903,25 @@
 	{/key}
 {/if}
 
-{#if game && myPlayer && me}
-	<Netizen />
-	<Voice meId={me.id} players={game.players} bind:speaking bind:members={voiceMembers} />
+{#if game && me}
+	{#if myPlayer}<Netizen />{/if}
+	<Voice bind:this={voice} bind:streams={voiceStreams} bind:states={voiceStates} {isHost} meId={me.id} canVoice={!!myPlayer} players={game.players} bind:speaking bind:members={voiceMembers} />
+{/if}
+
+{#if game?.status === 'playing' && myPlayer && !myPlayer.bankrupt}
+	<button class="surrender" onclick={surrender}>Menyerah</button>
 {/if}
 
 {#if toast}<div class="toast" role="status">{toast}</div>{/if}
 
 <style>
-	.top {
-		display: flex;
-		align-items: center;
-		gap: 1rem;
-		padding: 0.6rem 1rem;
-		border-bottom: 3px solid var(--ink);
-		background: var(--merah);
-		color: #fff;
-	}
-	.logo {
-		color: #fff;
-		font-weight: 800;
-		font-size: 1.35rem;
-		text-decoration: none;
-		letter-spacing: -0.02em;
-	}
-	.code {
-		margin-left: auto;
-		background: #fff;
-		color: var(--ink);
-		border: 2px solid var(--ink);
-		border-radius: 999px;
-		padding: 0.25rem 0.8rem;
-	}
-	.code strong {
-		letter-spacing: 0.12em;
-	}
 	.offline {
+		position: fixed;
+		top: 0.5rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 80;
+		box-shadow: 0 2px 0 var(--ink);
 		background: var(--angkot);
 		color: var(--ink);
 		padding: 0.2rem 0.6rem;
@@ -1092,11 +1050,12 @@
 		grid-template-columns: minmax(0, 1fr) 340px;
 		gap: 1rem;
 		padding: 1rem;
-		max-width: 1300px;
+		max-width: 1600px;
 		margin: 0 auto;
 	}
 	.board-wrap {
-		width: min(100%, calc(100vh - 6rem));
+		/* papan landscape 14x8 (rasio 1,75): lebar dibatasi oleh tinggi layar */
+		width: min(100%, calc((100vh - 4.8rem) * 1.75));
 		margin: 0 auto;
 	}
 	.hub {
@@ -1114,7 +1073,7 @@
 		justify-content: center;
 	}
 	.deck {
-		width: 22%;
+		width: min(22%, 7rem);
 		aspect-ratio: 0.68;
 		border: 2px solid var(--ink);
 		border-radius: 8px;
@@ -1134,6 +1093,11 @@
 	.deck.takdir {
 		background: var(--angkot);
 		transform: rotate(6deg);
+	}
+	.kas-col {
+		display: grid;
+		justify-items: center;
+		gap: 0.4rem;
 	}
 	.kas {
 		display: grid;
@@ -1250,60 +1214,6 @@
 		gap: 0.75rem;
 		align-content: start;
 	}
-	.calrow {
-		display: flex;
-		align-items: center;
-		gap: 0.6rem;
-	}
-	.cal {
-		display: inline-grid;
-		justify-items: center;
-		width: 4.2rem;
-		border: 2px solid var(--ink);
-		border-radius: 8px;
-		background: #fff;
-		box-shadow: 2px 2px 0 var(--ink);
-		overflow: hidden;
-		line-height: 1.1;
-		animation: calflip 0.35s ease both;
-	}
-	.cal-top {
-		width: 100%;
-		text-align: center;
-		background: var(--merah);
-		color: #fff;
-		font-size: 0.62rem;
-		font-weight: 800;
-		padding: 0.12rem 0;
-	}
-	.cal-day {
-		font-size: 1.7rem;
-		padding-top: 0.1rem;
-	}
-	.cal-dow {
-		font-size: 0.62rem;
-		color: var(--ink-soft);
-		font-weight: 700;
-		padding-bottom: 0.15rem;
-	}
-	.cal.payday {
-		background: #d8f5e2;
-	}
-	.cal.payday .cal-top {
-		background: #1f8a4c;
-	}
-	.cal-note {
-		margin: 0;
-		font-size: 0.75rem;
-		font-weight: 700;
-		color: var(--ink-soft);
-	}
-	@keyframes calflip {
-		from {
-			transform: rotateX(70deg);
-			opacity: 0.4;
-		}
-	}
 	.cards {
 		display: grid;
 		gap: 0.45rem;
@@ -1370,6 +1280,22 @@
 		flex: 1;
 		min-width: 0;
 		padding: 0.35rem 0.6rem;
+	}
+	/* Menyerah: di bar bawah, tepat di kiri ikon pengaturan */
+	.surrender {
+		position: fixed;
+		right: 2.5rem;
+		bottom: 0.2rem;
+		z-index: 71;
+		height: 1.8rem;
+		padding: 0 0.75rem;
+		border-radius: 999px;
+		border: 2px solid var(--ink);
+		background: #fff;
+		box-shadow: 1px 1px 0 var(--ink);
+		font-weight: 800;
+		font-size: 0.72rem;
+		cursor: pointer;
 	}
 	.danger {
 		display: flex;
@@ -1456,24 +1382,30 @@
 			transform: translate(-50%, -50%);
 		}
 	}
+	/* visual judol: muncul di sisi kiri kartu pemain, tinggi sama dengan kartu */
 	.judol-pop {
-		position: fixed;
-		left: 50%;
-		top: 38%;
-		transform: translate(-50%, -50%);
+		position: absolute;
+		right: calc(100% + 0.6rem);
+		top: 0;
+		bottom: 0;
 		z-index: 64;
 		pointer-events: none;
-		width: min(340px, calc(100vw - 2rem));
-		display: grid;
-		justify-items: stretch;
-		text-align: center;
-		gap: 0.15rem;
-		padding: 0.9rem 1rem;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.35rem 0.6rem;
 		background: var(--paper);
 		border: 3px solid var(--ink);
-		border-radius: 16px;
-		box-shadow: 6px 6px 0 var(--ink);
-		animation: rentin 0.25s ease both;
+		border-radius: 12px;
+		box-shadow: 4px 4px 0 var(--ink);
+		animation: jin 0.25s ease both;
+		white-space: nowrap;
+	}
+	@keyframes jin {
+		from {
+			opacity: 0;
+			transform: translateX(12px);
+		}
 	}
 	.judol-pop.win {
 		background: #d8f5e2;
@@ -1481,28 +1413,33 @@
 	.judol-pop.lose {
 		background: #fde0dc;
 	}
+	.jinfo {
+		display: grid;
+		gap: 0.05rem;
+		text-align: left;
+	}
 	.reels {
 		display: flex;
-		justify-content: center;
-		gap: 0.5rem;
-		margin: 0.3rem 0;
+		gap: 0.3rem;
+		height: 100%;
+		align-items: center;
 	}
 	.reel {
-		width: 4.2rem;
-		height: 4.6rem;
+		width: 2.6rem;
+		height: min(100%, 3.2rem);
 		display: grid;
 		place-items: center;
-		font-size: 2.6rem;
+		font-size: 1.7rem;
 		background: #fff;
-		border: 3px solid var(--ink);
-		border-radius: 10px;
-		box-shadow: inset 0 -6px 0 rgba(0, 0, 0, 0.08);
+		border: 2px solid var(--ink);
+		border-radius: 8px;
+		box-shadow: inset 0 -4px 0 rgba(0, 0, 0, 0.08);
 	}
 	.reel.spin {
 		filter: blur(1.5px);
 	}
 	.jpct {
-		font-size: 2.2rem;
+		font-size: 1.5rem;
 		font-variant-numeric: tabular-nums;
 		line-height: 1.1;
 	}
@@ -1596,20 +1533,6 @@
 		gap: 0.5rem;
 		justify-content: center;
 		flex-wrap: wrap;
-	}
-	.mute {
-		position: fixed;
-		left: 0.75rem;
-		bottom: 0.75rem;
-		z-index: 60;
-		width: 2.4rem;
-		height: 2.4rem;
-		border-radius: 50%;
-		border: 2px solid var(--ink);
-		background: #fff;
-		box-shadow: 2px 2px 0 var(--ink);
-		font-size: 1.1rem;
-		cursor: pointer;
 	}
 	.notifs {
 		position: fixed;
@@ -1720,7 +1643,7 @@
 	}
 	.toast {
 		position: fixed;
-		bottom: 1.25rem;
+		bottom: calc(1.25rem + var(--ticker-h, 0px));
 		left: 50%;
 		transform: translateX(-50%);
 		background: var(--ink);
@@ -1732,7 +1655,54 @@
 		max-width: calc(100vw - 2rem);
 	}
 
+	/* desktop: kolom kanan pas setinggi layar; scrollbar hanya di dalam isi tiap tab */
+	@media (min-width: 901px) {
+		.game {
+			height: calc(100vh - var(--ticker-h, 0px));
+		}
+		.side {
+			display: flex;
+			flex-direction: column;
+			min-height: 0;
+			height: 100%;
+		}
+		.cards {
+			flex: none;
+		}
+		/* banyak pemain: daftar kartu dibatasi setengah tinggi dan bisa di-scroll */
+		.cards.scroll {
+			flex: 0 1 auto;
+			min-height: 0;
+			max-height: 50%;
+			overflow-y: auto;
+			overflow-x: hidden;
+			padding: 0.8rem 0.3rem 0.3rem 0;
+			margin-top: -0.8rem;
+		}
+		.feed {
+			flex: 1 1 0;
+			min-height: 11rem;
+			display: flex;
+			flex-direction: column;
+		}
+		.feed-body,
+		.feed-body.tall {
+			flex: 1 1 0;
+			height: auto;
+			min-height: 0;
+		}
+		.tabs,
+		.chat-form,
+		.danger {
+			flex: none;
+		}
+	}
 	@media (max-width: 900px) {
+		.judol-pop {
+			right: 0;
+			left: 0;
+			justify-content: center;
+		}
 		.game {
 			grid-template-columns: 1fr;
 			padding: 0.5rem;

@@ -29,10 +29,7 @@
 		margin: 0;
 		font-family: 'Bricolage Grotesque', system-ui, sans-serif;
 		color: var(--ink);
-		background:
-			radial-gradient(circle at 20% 0%, rgba(255, 255, 255, 0.55), transparent 50%),
-			repeating-linear-gradient(135deg, transparent 0 22px, rgba(20, 33, 61, 0.035) 22px 23px),
-			var(--ktp);
+		background: var(--ktp) url('/bg.png') center / cover no-repeat fixed;
 		min-height: 100vh;
 		font-variant-numeric: tabular-nums;
 		-webkit-font-smoothing: antialiased;

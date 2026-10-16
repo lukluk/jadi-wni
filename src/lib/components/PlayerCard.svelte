@@ -4,7 +4,20 @@
 	import Avatar from './Avatar.svelte';
 
 	/** @type {{ p:any, game:any, isTurn:boolean, isMe:boolean, online:boolean, isHost:boolean, speaking?:boolean, inVoice?:boolean, hold?:boolean, salary?:{id:string, amount:number, n:number}|null }} */
-	let { p, game, isTurn, isMe, online, isHost, hold = false, salary = null, speaking = false, inVoice = false } = $props();
+	let { p, game, isTurn, isMe, online, isHost, roomCode = '', onCopyCode, hold = false, salary = null, speaking = false, inVoice = false, stream = null, micMuted = false, camOn = false, canControl = false, onControl } = $props();
+
+	/** pasang MediaStream ke <video> avatar */
+	function attach(node, s) {
+		node.srcObject = s;
+		node.play?.().catch(() => {});
+		return {
+			update(n) {
+				node.srcObject = n;
+				node.play?.().catch(() => {});
+			},
+			destroy: () => (node.srcObject = null)
+		};
+	}
 
 	// saldo yang ditampilkan menyusul p.money; kalau turun: blink merah + angka melayang
 	// svelte-ignore state_referenced_locally
@@ -58,7 +71,18 @@
 
 <article class="ktp" data-pid={p.id} class:speaking class:turn={isTurn} class:bankrupt={p.bankrupt} style:--c={p.color}>
 	<div class="photo" aria-hidden="true">
-		<Avatar {p} />
+		{#if stream}
+			<video use:attach={stream} autoplay playsinline muted class:mirror={isMe}></video>
+		{:else}
+			<Avatar {p} />
+		{/if}
+		{#if isMe && !inVoice}
+			<button class="ov bottom join" onclick={() => onControl?.('join')} title="Gabung obrolan suara & video" aria-label="Gabung suara dan video">🎧</button>
+		{/if}
+		{#if inVoice && canControl}
+			<button class="ov top" class:off={micMuted} onclick={() => onControl?.('mic')} title={isMe ? (micMuted ? 'Nyalakan mic' : 'Matikan mic') : 'Matikan mic pemain ini'} aria-label="Mic">{micMuted ? '🔇' : '🎙️'}</button>
+			<button class="ov bottom" class:off={!camOn} onclick={() => onControl?.('cam')} title={isMe ? (camOn ? 'Matikan kamera' : 'Nyalakan kamera') : 'Matikan kamera pemain ini'} aria-label="Kamera">📷</button>
+		{/if}
 		{#if king}<span class="crown" title="Terkaya nomor 1" aria-label="Raja: terkaya nomor 1">👑</span>{/if}
 	</div>
 	<div class="info">
@@ -67,7 +91,9 @@
 			<strong>{p.name}</strong>
 			{#if isMe}<span class="tag">kamu</span>{/if}
 			{#if isHost}<span class="tag">host</span>{/if}
-			{#if inVoice}<span class="mic" title="Ikut obrolan suara">{speaking ? '🔊' : '🎙️'}</span>{/if}
+			{#if isHost && roomCode}<button class="code" onclick={onCopyCode} title="Kode room, klik untuk menyalin link undangan">{roomCode}</button>{/if}
+			{#if inVoice}<span class="mic" title="Ikut obrolan suara">{micMuted ? '🔇' : speaking ? '🔊' : '🎙️'}</span>{/if}
+			{#if inVoice && isMe}<button class="leave" onclick={() => onControl?.('leave')} title="Keluar dari suara & video" aria-label="Keluar dari suara dan video">Keluar</button>{/if}
 		</div>
 		<div class="status">{status}</div>
 		{#if game.status !== 'lobby'}
@@ -86,6 +112,18 @@
 </article>
 
 <style>
+	.code {
+		font: inherit;
+		font-size: 0.62rem;
+		font-weight: 800;
+		letter-spacing: 0.1em;
+		padding: 0.05rem 0.4rem;
+		border: 1.5px solid var(--ink);
+		border-radius: 999px;
+		background: #fff;
+		color: var(--ink);
+		cursor: pointer;
+	}
 	.ktp {
 		display: grid;
 		grid-template-columns: 52px 1fr;
@@ -103,6 +141,47 @@
 	}
 	.mic {
 		font-size: 0.8rem;
+	}
+	.leave {
+		flex: none;
+		padding: 0 0.3rem;
+		border: 1.5px solid var(--ink);
+		border-radius: 6px;
+		background: #fde0dc;
+		font-size: 0.62rem;
+		font-weight: 800;
+		cursor: pointer;
+	}
+	.ov {
+		position: absolute;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 3;
+		padding: 0 0.2rem;
+		border-radius: 999px;
+		background: #fff;
+		border: 1.5px solid var(--ink);
+		font-size: 0.7rem;
+		line-height: 1.3;
+		cursor: pointer;
+	}
+	.ov.off {
+		background: #fde0dc;
+	}
+	.ov.top {
+		top: 2px;
+	}
+	.ov.bottom {
+		bottom: 2px;
+	}
+	.photo video {
+		width: 100%;
+		height: 100%;
+		object-fit: cover;
+		display: block;
+	}
+	.photo video.mirror {
+		transform: scaleX(-1);
 	}
 	.turn {
 		background: linear-gradient(160deg, #fff8d6, #f6d74a);

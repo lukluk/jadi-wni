@@ -1,6 +1,5 @@
 <script>
 	import Candles from './Candles.svelte';
-	import SogokModal from './SogokModal.svelte';
 	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
@@ -76,9 +75,8 @@
 	{:else}
 		<section>
 			<h4>Saham</h4>
-			<p class="sum saldo">
-				<span>Saldo <strong>{formatRp(me.money)}</strong> · Nilai saham <strong>{formatRp(stockTotal)}</strong></span>
-				{#if playing}<SogokModal {game} {meId} {onAction} />{/if}
+			<p class="sum">
+				Saldo <strong>{formatRp(me.money)}</strong> · Nilai saham <strong>{formatRp(stockTotal)}</strong>
 			</p>
 			{#if playing}
 				<button class="btn primary" onclick={() => (showBuy = true)}>📈 Beli saham</button>
@@ -118,7 +116,6 @@
 		{#if playing}
 			<section class="judol">
 				<h4>🎰 Judol</h4>
-				<p class="note">Taruhan diacak: bisa untung sampai +100% atau rugi sampai −100% dari taruhanmu. Bisa habis semua!</p>
 				<div class="row">
 					<input
 						type="number"
@@ -237,12 +234,6 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		color: var(--ink-soft);
-	}
-	.saldo {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		gap: 0.4rem;
 	}
 	.sum,
 	.note,

@@ -37,6 +37,11 @@ export const WIKI_TITLES = {
 	SCBD: 'Sudirman Central Business District'
 };
 
+/** foto manual dari Commons untuk kota yang artikel Wikipedia-nya tidak punya foto bebas */
+export const COMMONS_FILES = {
+	Kemang: 'File:Avenue of the Stars, Lippo Mall Kemang.jpg'
+};
+
 function ensureTable() {
 	getDb().exec(`CREATE TABLE IF NOT EXISTS city_images (
 		name TEXT PRIMARY KEY,
@@ -109,6 +114,10 @@ export async function fetchCityImages(fetchImpl = fetch) {
 		};
 	}
 
+	// berkas Commons manual untuk kota yang belum dapat foto
+	for (const [name, file] of Object.entries(COMMONS_FILES))
+		if (!found[name]) found[name] = { url: null, file, page: `https://commons.wikimedia.org/wiki/${encodeURIComponent(file.replace(/ /g, '_'))}` };
+
 	// 2) kredit & lisensi dari Commons
 	const files = Object.values(found).map((f) => f.file);
 	if (files.length) {
@@ -116,6 +125,7 @@ export async function fetchCityImages(fetchImpl = fetch) {
 			action: 'query',
 			prop: 'imageinfo',
 			iiprop: 'extmetadata|url',
+			iiurlwidth: String(THUMB),
 			iiextmetadatafilter: 'Artist|LicenseShortName',
 			titles: files.join('|')
 		});
@@ -127,8 +137,10 @@ export async function fetchCityImages(fetchImpl = fetch) {
 			f.credit = stripHtml(em.Artist?.value) || 'Wikimedia Commons';
 			f.license = stripHtml(em.LicenseShortName?.value) || '';
 			f.page = info?.descriptionurl ?? f.page;
+			f.url ??= info?.thumburl ?? null;
 			delete f.file;
 		}
+		for (const name of Object.keys(found)) if (!found[name].url) delete found[name];
 	}
 	return found;
 }
@@ -161,7 +173,10 @@ export async function refreshCityImages({ force = false, fetchImpl = fetch } = {
 	const db = getDb();
 	const oldest = db.prepare('SELECT MIN(fetched_at) AS t, COUNT(*) AS n FROM city_images').get();
 	const cityCount = TILES.filter((t) => t.type === 'property').length;
-	if (!force && oldest.n >= cityCount && Date.now() - oldest.t < REFRESH_MS) return;
+	const missingManual = Object.keys(COMMONS_FILES).some(
+		(n) => !db.prepare('SELECT 1 FROM city_images WHERE name = ? AND url IS NOT NULL').get(n)
+	);
+	if (!force && !missingManual && oldest.n >= cityCount && Date.now() - oldest.t < REFRESH_MS) return;
 	refreshing = true;
 	try {
 		const found = await fetchCityImages(fetchImpl);
