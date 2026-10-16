@@ -24,6 +24,7 @@
 		MAX_PLAYERS,
 		formatRp,
 		richestId,
+		netWorth,
 		surrenderPlan,
 		formatAmt,
 		salaryFor,
@@ -299,9 +300,20 @@
 	let clockOffset = 0;
 	let nowMs = $state(Date.now());
 	$effect(() => {
-		if (game?.phase !== 'rent' && !game?.kickVote) return;
+		if (game?.phase !== 'rent' && !game?.kickVote && !game?.koWarnUntil) return;
 		const iv = setInterval(() => (nowMs = Date.now()), 250);
 		return () => clearInterval(iv);
+	});
+	const koLeft = $derived(
+		game?.koWarnUntil ? Math.max(0, Math.ceil((game.koWarnUntil - (nowMs + clockOffset)) / 1000)) : 0
+	);
+	const koPoorest = $derived.by(() => {
+		if (!game || game.status !== 'playing' || !game.koWarnUntil) return null;
+		const alive = game.players.filter((p) => !p.bankrupt);
+		if (!alive.length) return null;
+		return alive
+			.map((p) => ({ p, w: netWorth(game, p) }))
+			.sort((a, b) => a.w - b.w || a.p.money - b.p.money)[0];
 	});
 	const rentLeft = $derived.by(() => {
 		const dl = game?.phase === 'rent' ? game.pendingRent?.deadline : null;
@@ -631,6 +643,15 @@
 				<p>Kamu menonton room ini.</p>
 			{/if}
 
+			{#if isHost}
+				<label class="ko-opt">
+					<input type="checkbox" checked={!!game.knockout} onchange={(e) => emit('room:knockout', { on: e.currentTarget.checked })} />
+					<span><b>☠️ Knock Out</b> — tiap 20 menit pemain termiskin tereliminasi (ada peringatan 3 menit untuk jual aset).</span>
+				</label>
+			{:else if game.knockout}
+				<p class="ko-note"><b>☠️ Mode Knock Out aktif.</b> Tiap 20 menit pemain termiskin tereliminasi — ada 3 menit untuk menyelamatkan diri.</p>
+			{/if}
+
 			<div class="lobby-actions">
 				{#if isHost}
 					<button class="btn primary" disabled={busy || game.players.length < MIN_PLAYERS} onclick={() => emit('game:start')}>
@@ -874,6 +895,18 @@
 	</div>
 {/if}
 
+{#if game?.koWarnUntil && koLeft > 0}
+	{@const mine = koPoorest && me && koPoorest.p.id === me.id}
+	<div class="ko-pop" class:danger={mine} role="alertdialog" aria-live="assertive">
+		<strong>☠️ KNOCK OUT {fmtLeft(koLeft)}</strong>
+		<small>
+			Pemain <b>termiskin</b> tereliminasi. Terancam sekarang:
+			<b>{koPoorest?.p.name ?? '-'}</b>{#if koPoorest} ({formatRp(koPoorest.w)}){/if}{#if mine} — itu KAMU!{/if}
+		</small>
+		<small>Jual/beli aset, bangun, atau mainkan saham untuk menaikkan kekayaan bersihmu.</small>
+	</div>
+{/if}
+
 {#if showRent && rentInfo}
 	{@const ri = rentInfo}
 	{@const rimg = cityImages[ri.tile.name]}
@@ -1066,6 +1099,62 @@
 		border-radius: 12px;
 		box-shadow: 4px 4px 0 var(--ink);
 		animation: rentin 0.25s ease both;
+	}
+	.ko-opt {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		font-size: 0.86rem;
+		line-height: 1.35;
+		background: #fff3f2;
+		border: 2px solid var(--ink);
+		border-radius: var(--radius-s);
+		padding: 0.5rem 0.7rem;
+		cursor: pointer;
+	}
+	.ko-opt input {
+		margin-top: 0.15rem;
+		width: 1.1rem;
+		height: 1.1rem;
+		flex: none;
+		accent-color: var(--merah);
+	}
+	.ko-note {
+		margin: 0;
+		font-size: 0.86rem;
+		line-height: 1.35;
+		background: #fff3f2;
+		border: 2px solid var(--ink);
+		border-radius: var(--radius-s);
+		padding: 0.5rem 0.7rem;
+	}
+	.ko-pop {
+		position: fixed;
+		top: 4.6rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 66;
+		width: min(420px, calc(100vw - 2rem));
+		display: grid;
+		gap: 0.25rem;
+		padding: 0.6rem 0.9rem;
+		background: #ffe08a;
+		border: 3px solid var(--ink);
+		border-radius: 12px;
+		box-shadow: 4px 4px 0 var(--ink);
+		animation: rentin 0.25s ease both;
+		text-align: center;
+	}
+	.ko-pop strong {
+		font-size: 1.2rem;
+		font-variant-numeric: tabular-nums;
+	}
+	.ko-pop.danger {
+		background: var(--merah);
+		color: #fff;
+	}
+	.ko-pop.danger b {
+		color: #fff;
 	}
 	.kick-acts {
 		display: flex;

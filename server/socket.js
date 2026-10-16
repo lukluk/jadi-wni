@@ -11,6 +11,7 @@ import {
 	forceSkip,
 	expireRent,
 	expireKick,
+	knockoutTick,
 	publicState,
 	GameError
 } from './game/engine.js';
@@ -150,7 +151,7 @@ export function attachSocket(httpServer) {
 		for (const state of rooms.values()) {
 			try {
 				const hostHere = (presence.get(state.code)?.get(state.hostId) ?? 0) > 0;
-				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state)) {
+				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state) | knockoutTick(state)) {
 					persist(state);
 					broadcast(io, state);
 				}
@@ -247,10 +248,10 @@ export function attachSocket(httpServer) {
 			}
 		};
 
-		socket.on('room:create', (_payload, ack) => {
+		socket.on('room:create', (payload, ack) => {
 			try {
 				const code = genCode();
-				const state = createGame(code, user);
+				const state = createGame(code, user, { knockout: !!payload?.knockout });
 				rooms.set(code, state);
 				persist(state);
 				ack?.({ ok: true, code });
@@ -325,6 +326,14 @@ export function attachSocket(httpServer) {
 			mutate((state) => {
 				if (state.hostId !== user.id) throw new GameError('Hanya host yang bisa memulai.');
 				startGame(state);
+			}, ack)
+		);
+
+		socket.on('room:knockout', (payload, ack) =>
+			mutate((state) => {
+				if (state.hostId !== user.id) throw new GameError('Hanya host yang bisa mengubah pengaturan.');
+				if (state.status !== 'lobby') throw new GameError('Game sudah dimulai.');
+				state.knockout = !!payload?.on;
 			}, ack)
 		);
 

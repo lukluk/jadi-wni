@@ -60,12 +60,15 @@ const current = (state) => state.players[state.turn];
 const alive = (state) => state.players.filter((p) => !p.bankrupt);
 const groupTiles = (group) => TILES.filter((t) => t.group === group);
 
-export function createGame(code, host) {
+export function createGame(code, host, opts = {}) {
 	const state = {
 		code,
 		hostId: host.id,
 		status: 'lobby',
 		createdAt: Date.now(),
+		knockout: !!opts.knockout,
+		koNextAt: null,
+		koWarnUntil: null,
 		players: [],
 		tiles: {},
 		market: {},
@@ -139,7 +142,12 @@ export function startGame(state, rng = Math.random) {
 	state.phase = 'roll';
 	state.decks.musibah = shuffle([...CARDS.musibah.keys()], rng);
 	state.decks.takdir = shuffle([...CARDS.takdir.keys()], rng);
+	if (state.knockout) {
+		state.koNextAt = Date.now() + KO_PERIOD_MS;
+		state.koWarnUntil = null;
+	}
 	log(state, `Game dimulai! Urutan: ${state.players.map((p) => p.name).join(' → ')}.`);
+	if (state.knockout) log(state, `☠️ Mode Knock Out aktif: tiap 20 menit pemain termiskin tereliminasi (ada 3 menit peringatan untuk jual aset).`);
 	log(state, `Giliran ${current(state).name}.`);
 }
 
@@ -607,6 +615,52 @@ function goBankrupt(state, p) {
 	}
 	checkWinner(state);
 	if (state.status === 'playing' && wasCurrent) nextTurn(state);
+}
+
+// ---------- knock out (opsional) ----------
+
+export const KO_PERIOD_MS = 20 * 60 * 1000; // tiap 20 menit
+export const KO_WARN_MS = 3 * 60 * 1000; // peringatan 3 menit sebelum eliminasi
+
+/** pemain hidup dengan kekayaan bersih terendah (tie-break: uang tunai lalu urutan) */
+function koPoorest(state) {
+	const alive = state.players.filter((p) => !p.bankrupt);
+	if (!alive.length) return null;
+	return alive
+		.map((p, idx) => ({ p, idx, w: netWorth(state, p) }))
+		.sort((a, b) => a.w - b.w || a.p.money - b.p.money || a.idx - b.idx)[0].p;
+}
+
+/**
+ * Siklus knock out. Dipanggil tiap detik dari server.
+ * - Saat waktunya tiba: buka peringatan 3 menit (pemain bisa jual/beli aset untuk ubah posisi).
+ * - Setelah 3 menit: pemain termiskin saat itu tereliminasi.
+ * @returns {boolean} true kalau state berubah (perlu broadcast)
+ */
+export function knockoutTick(state, now = Date.now()) {
+	if (!state.knockout || state.status !== 'playing') return false;
+	const aliveCount = state.players.filter((p) => !p.bankrupt).length;
+	if (aliveCount <= 1) return false;
+	// mulai peringatan
+	if (!state.koWarnUntil && state.koNextAt && now >= state.koNextAt) {
+		state.koWarnUntil = now + KO_WARN_MS;
+		state.koNextAt = now + KO_PERIOD_MS;
+		const poorest = koPoorest(state);
+		state.seq += 1;
+		log(state, `☠️ KNOCK OUT dalam 3 menit! Yang termiskin akan tereliminasi. Terancam sekarang: ${poorest ? poorest.name : '-'}. Jual/beli aset untuk selamat.`);
+		return true;
+	}
+	// eksekusi eliminasi
+	if (state.koWarnUntil && now >= state.koWarnUntil) {
+		state.koWarnUntil = null;
+		const victim = koPoorest(state);
+		if (victim) {
+			log(state, `☠️ KNOCK OUT! ${victim.name} tereliminasi sebagai yang termiskin.`);
+			goBankrupt(state, victim);
+		}
+		return true;
+	}
+	return false;
 }
 
 // ---------- properti ----------

@@ -11,12 +11,13 @@
 	let joinCode = $state('');
 	let busy = $state(false);
 	let error = $state('');
+	let knockout = $state(false);
 
 	async function createRoom() {
 		busy = true;
 		error = '';
 		getSocket();
-		const res = await call('room:create');
+		const res = await call('room:create', { knockout });
 		busy = false;
 		if (!res.ok) return (error = res.error);
 		goto(`/room/${res.code}`);
@@ -84,6 +85,10 @@
 			<button class="btn primary big" onclick={createRoom} disabled={busy}>
 				{busy ? 'Membuat room…' : '🎲 Buat room baru'}
 			</button>
+			<label class="ko-opt">
+				<input type="checkbox" bind:checked={knockout} />
+				<span><b>☠️ Knock Out</b> — tiap 20 menit pemain termiskin tereliminasi (ada peringatan 3 menit untuk jual aset).</span>
+			</label>
 			<div class="or"><span>atau</span></div>
 			<form class="join" onsubmit={joinRoom}>
 				<label for="code">Punya kode undangan?</label>
@@ -320,6 +325,25 @@
 	.big {
 		padding: 0.85rem 1.2rem;
 		font-size: 1.1rem;
+	}
+	.ko-opt {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.5rem;
+		font-size: 0.85rem;
+		line-height: 1.35;
+		background: #fff3f2;
+		border: 2px solid var(--ink);
+		border-radius: var(--radius-s);
+		padding: 0.5rem 0.7rem;
+		cursor: pointer;
+	}
+	.ko-opt input {
+		margin-top: 0.15rem;
+		width: 1.1rem;
+		height: 1.1rem;
+		flex: none;
+		accent-color: var(--merah);
 	}
 	.or {
 		display: flex;
