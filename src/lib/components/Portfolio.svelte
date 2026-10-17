@@ -1,6 +1,6 @@
 <script>
 	import Candles from './Candles.svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf, USAHA, usahaById, usahaPayback } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -47,6 +47,14 @@
 	let dialog = $state();
 	$effect(() => {
 		if (showBuy) dialog?.showModal();
+	});
+
+	// usaha: tiap pemain boleh pilih satu
+	const myUsaha = $derived(usahaById(me?.usaha));
+	let showUsaha = $state(false);
+	let usahaDialog = $state();
+	$effect(() => {
+		if (showUsaha) usahaDialog?.showModal();
 	});
 </script>
 
@@ -114,6 +122,22 @@
 		</section>
 
 		{#if playing}
+			<section class="usaha-sec">
+				<h4>💼 Usaha</h4>
+				{#if myUsaha}
+					<div class="usaha-have">
+						<span class="u-emoji">{myUsaha.emoji}</span>
+						<div>
+							<strong>{myUsaha.name}</strong>
+							<small>Setoran {formatRp(myUsaha.income)} tiap lewat GAJIAN</small>
+						</div>
+					</div>
+				{:else}
+					<p class="sum">Buka <strong>satu</strong> usaha untuk pemasukan pasif tiap gajian — pilih sekali, tak bisa ganti.</p>
+					<button class="btn primary" onclick={() => (showUsaha = true)}>🏗️ Bangun usaha</button>
+				{/if}
+			</section>
+
 			<section class="judol">
 				<h4>🎰 Judod</h4>
 				<div class="row">
@@ -214,6 +238,34 @@
 				</article>
 			{/each}
 			<button class="close" onclick={() => dialog.close()} aria-label="Tutup">✕</button>
+		</div>
+	</dialog>
+{/if}
+
+{#if showUsaha && me}
+	<dialog bind:this={usahaDialog} onclose={() => (showUsaha = false)} onclick={(e) => e.target === usahaDialog && usahaDialog.close()}>
+		<div class="sheet">
+			<h3>💼 Pilih Usaha</h3>
+			<p class="sum">Cuma boleh punya <strong>1 usaha</strong>. Modal besar = untung lebih gede tapi balik modal lebih lama.</p>
+			{#each USAHA as u (u.id)}
+				{@const kurang = me.money < u.cost}
+				<article class="ucard">
+					<div class="uhead">
+						<span class="u-emoji">{u.emoji}</span>
+						<div><strong>{u.name}</strong> <span class="utag">{u.modal}</span></div>
+					</div>
+					<ul class="ustat">
+						<li>Modal awal<b>{u.cost ? formatRp(u.cost) : 'Gratis'}</b></li>
+						<li>Setoran<b>{formatRp(u.income)}/gajian</b></li>
+						<li>Balik modal<b>{u.cost ? `±${usahaPayback(u)}× gajian` : 'langsung untung'}</b></li>
+					</ul>
+					<p class="udesc">{u.desc}</p>
+					<button class="btn primary small" disabled={kurang} onclick={() => { onAction({ type: 'buildUsaha', id: u.id }); showUsaha = false; }}>
+						{kurang ? `Modal kurang (${formatRp(u.cost)})` : u.cost ? `Bangun — ${formatRp(u.cost)}` : 'Bangun — gratis'}
+					</button>
+				</article>
+			{/each}
+			<button class="close" onclick={() => usahaDialog.close()} aria-label="Tutup">✕</button>
 		</div>
 	</dialog>
 {/if}
@@ -340,6 +392,76 @@
 		border-radius: 10px;
 		padding: 0.5rem 0.6rem;
 		background: #fff3f0;
+	}
+	.usaha-sec {
+		border: 2px dashed var(--ink);
+		border-radius: 10px;
+		padding: 0.5rem 0.6rem;
+		background: #eef7ef;
+	}
+	.usaha-have {
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		background: #fff;
+		border: 2px solid var(--ink);
+		border-radius: 10px;
+		padding: 0.4rem 0.6rem;
+	}
+	.usaha-have small {
+		display: block;
+		color: var(--ink-soft);
+		font-size: 0.75rem;
+	}
+	.u-emoji {
+		font-size: 1.6rem;
+		line-height: 1;
+		flex: none;
+	}
+	.ucard {
+		border: 2px solid var(--ink);
+		border-radius: 10px;
+		padding: 0.5rem 0.6rem;
+		margin-bottom: 0.5rem;
+		background: #fff;
+		display: grid;
+		gap: 0.35rem;
+	}
+	.uhead {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+	}
+	.utag {
+		font-size: 0.68rem;
+		font-weight: 800;
+		text-transform: uppercase;
+		background: #e3ecff;
+		border: 1px solid var(--ink);
+		border-radius: 999px;
+		padding: 0.05rem 0.4rem;
+		white-space: nowrap;
+	}
+	.ustat {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.15rem;
+		font-size: 0.8rem;
+		color: var(--ink-soft);
+	}
+	.ustat li {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.ustat b {
+		color: var(--ink);
+	}
+	.udesc {
+		margin: 0;
+		font-size: 0.8rem;
 	}
 	.danger-btn {
 		background: var(--merah);

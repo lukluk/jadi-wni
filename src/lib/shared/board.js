@@ -148,6 +148,21 @@ export const salaryFor = (tiles, playerId) => {
 	return { sawit, bonus: sawit * SAWIT_SALARY_BONUS, amount: SALARY + sawit * SAWIT_SALARY_BONUS };
 };
 
+/**
+ * Usaha: tiap pemain boleh pilih SATU saja. Pendapatannya masuk tiap lewat GAJIAN (payday).
+ * Dibuat fair: makin besar modal, makin besar pendapatan per putaran, tapi makin lama balik modalnya.
+ * Payback (putaran gajian) ≈ cost / income: reseller 0, warung ~3,3, pabrik ~4,4.
+ * Jangka panjang modal besar paling untung; jangka pendek tanpa/kecil modal lebih aman.
+ */
+export const USAHA = [
+	{ id: 'reseller', name: 'Reseller Online', emoji: '📦', modal: 'Modal receh', cost: 20, income: 25, musibahLoss: 60, desc: 'Modal receh 20 jt, langsung balik modal. Cuan tipis tapi aman, cocok buat yang irit.', musibah: 'Paketmu nyangkut di ekspedisi & banyak retur, reseller rugi' },
+	{ id: 'warung', name: 'Warung Sembako', emoji: '🏪', modal: 'Modal kecil', cost: 250, income: 75, musibahLoss: 200, desc: 'Modal kecil, balik modal cepat (~3 putaran gajian). Pilihan paling seimbang.', musibah: 'Warungmu kebobolan maling semalam, stok ludes' },
+	{ id: 'pabrik', name: 'Pabrik Kerupuk', emoji: '🏭', modal: 'Modal besar', cost: 800, income: 180, musibahLoss: 500, desc: 'Modal besar di awal, untung paling gede, tapi balik modalnya lama (~4–5 putaran).', musibah: 'Mesin pabrik kerupukmu rusak parah, produksi setop' }
+];
+export const usahaById = (id) => USAHA.find((u) => u.id === id) ?? null;
+/** perkiraan berapa kali lewat GAJIAN untuk balik modal */
+export const usahaPayback = (u) => (u.cost > 0 ? Math.round(u.cost / u.income) : 0);
+
 export const STATION_RENT =[0, 25, 50, 100, 200];
 export const UTILITY_MULT = [0, 4, 10];
 
@@ -167,7 +182,7 @@ export const isOwnable = (t) => t.type === 'property' || t.type === 'station' ||
  */
 export const CARDS = {
 	musibah: [
-		{ text: 'Banjir kiriman! Renovasi: bayar Rp 25 jt per rumah dan Rp 100 jt per Rumah OKB.', fx: { repairs: [25, 100] } },
+		{ text: 'Banjir kiriman! Renovasi: bayar Rp 25 jt per rumah dan Rp 100 jt per Rumah OKB.', req: 'house', fx: { repairs: [25, 100] } },
 		{ text: 'HP dicopet waktu desak-desakan di KRL. Bayar Rp 50 jt.', fx: { money: -50 } },
 		{ text: 'Motor mogok nekat terobos genangan. Servis bengkel Rp 30 jt.', fx: { money: -30 } },
 		{ text: 'Lupa ganjil-genap, kena tilang elektronik. Bayar Rp 50 jt.', fx: { money: -50 } },
@@ -178,13 +193,14 @@ export const CARDS = {
 		{ text: 'Macet total di tol dalam kota. Mundur 3 petak.', fx: { back: 3 } },
 		{ text: 'Barang dari online shop ternyata batu bata. Rugi Rp 40 jt.', fx: { money: -40 } },
 		{ text: 'Kebablasan checkout pakai paylater. Bayar Rp 75 jt.', fx: { money: -75 } },
-		{ text: 'Atap bocor tiap hujan. Bayar Rp 40 jt per rumah dan Rp 115 jt per Rumah OKB.', fx: { repairs: [40, 115] } },
+		{ text: 'Atap bocor tiap hujan. Bayar Rp 40 jt per rumah dan Rp 115 jt per Rumah OKB.', req: 'house', fx: { repairs: [40, 115] } },
 		{ text: 'Anak masuk sekolah, ada uang gedung. Bayar Rp 150 jt.', fx: { money: -150 } },
 		{ text: 'Kartu BPJS ketinggalan, bayar rumah sakit mandiri. Rp 100 jt.', fx: { money: -100 } },
 		{ text: 'Tetangga pinjam uang "minggu depan dibalikin". Sudah 2 tahun. Rugi Rp 50 jt.', fx: { money: -50 } },
+		{ text: '💼 Usahamu kena musibah operasional! Tanggung kerugiannya (makin besar usaha, makin besar ruginya).', req: 'usaha', fx: { usahaHit: true } },
 		{ text: 'Mudik lebaran kena macet 20 jam di jalur pantura. Mundur 2 petak.', fx: { back: 2 } },
-		{ text: '🔥 Karhutla! Kemarau panjang, lahan sawit terbakar. Semua Kebun Sawit hangus jadi Rumah OKB dan pemiliknya kena denda lingkungan sebesar biaya bangun sawit.', fx: { karhutla: true } },
-		{ text: '🔥 Puntung rokok di lahan gambut, api menjalar ke kebun sawit! Semua Kebun Sawit hangus jadi Rumah OKB dan pemiliknya kena denda lingkungan sebesar biaya bangun sawit.', fx: { karhutla: true } }
+		{ text: '🔥 Karhutla! Kemarau panjang, lahan sawit terbakar. Semua Kebun Sawit hangus jadi Rumah OKB dan pemiliknya kena denda lingkungan sebesar biaya bangun sawit.', req: 'sawit', fx: { karhutla: true } },
+		{ text: '🔥 Puntung rokok di lahan gambut, api menjalar ke kebun sawit! Semua Kebun Sawit hangus jadi Rumah OKB dan pemiliknya kena denda lingkungan sebesar biaya bangun sawit.', req: 'sawit', fx: { karhutla: true } }
 	],
 	takdir: [
 		{ text: 'THR cair! Terima Rp 100 jt.', fx: { money: 100 } },

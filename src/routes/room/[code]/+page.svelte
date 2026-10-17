@@ -136,6 +136,8 @@
 	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh);
 
 	// reaksi cepat (ketawa / sedih / tepuk tangan)
+	// video kemenangan yang di-embed di koran (ID video YouTube). Kosongkan untuk pakai foto avatar.
+	const WIN_VIDEO_ID = 'zA0RzYByFrw';
 	const REACTIONS = [
 		{ kind: 'ketawa', label: 'Ngakak', emoji: '🤣', gif: '/reactions/ketawa.gif', key: '.' },
 		{ kind: 'sedih', label: 'Sedih banget', emoji: '😭', gif: '/reactions/sedih.gif', key: ',' },
@@ -278,6 +280,28 @@
 	const myTurn = $derived(!!cur && cur.id === me?.id);
 	const curOnline = $derived(!!cur && game.online.includes(cur.id));
 	const winner = $derived(game?.winner ? game.players.find((p) => p.id === game.winner) : null);
+	// koran kemenangan full-page: muncul sekali saat game berakhir ada pemenang
+	let winPaper = $state(false);
+	let winShownFor = $state(/** @type {string|null} */ (null));
+	$effect(() => {
+		if (game?.status === 'ended' && game.winner) {
+			if (winShownFor !== game.winner) {
+				winShownFor = game.winner;
+				winPaper = true;
+			}
+		} else if (game?.status !== 'ended') {
+			winShownFor = null;
+			winPaper = false;
+		}
+	});
+	const winWorth = $derived(winner ? netWorth(game, winner) : 0);
+	const winWaLink = $derived(
+		`https://wa.me/?text=${encodeURIComponent(
+			`🏆 ${winner?.name ?? 'Seseorang'} berhasil masuk jajaran ‘Sembilan Naga’ di Jadi WNI dengan kekayaan ${formatRp(winWorth)}! Ayo tantang dia: ${page.url.origin}`
+		)}`
+	);
+	const todayLong = () =>
+		new Date().toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 	/** jumlah tawaran masuk di asetku yang dijual */
 	const marketBadge = $derived(
 		Object.values(game?.market ?? {})
@@ -577,7 +601,7 @@
 		if (st.players.some((p, i) => p.bankrupt && !prev.players[i]?.bankrupt)) play('bankrupt');
 		else if (st.players.some((p, i) => p.inJail && prev.players[i] && !prev.players[i].inJail)) play('jail');
 		if (st.status === 'playing' && st.turn !== prev.turn && st.players[st.turn].id === myId) play('turn');
-		if (prev.status === 'playing' && st.status === 'ended') play(st.winner === myId ? 'win' : 'bad');
+		// akhir game: musik kemenangan diputar untuk semua lewat efek koran (winPaper), bukan di sini
 	}
 
 	// giliran berakhir otomatis 3-2-1 setelah dadu, bidak, dan kartu selesai
@@ -779,6 +803,10 @@
 								<div class="kas">
 									<small>🏛️ Kas Negara</small>
 									<strong>{formatRp(game.kasNegara)}</strong>
+								</div>
+								<div class="kas bandar" title="Lawan main judod: pemain menang bandar bayar, pemain kalah masuk bandar">
+									<small>🎰 Bandar Judod</small>
+									<strong class:minus={(game.bandarJudod ?? 0) < 0}>{formatRp(game.bandarJudod ?? 0)}</strong>
 								</div>
 							</div>
 							<div class="deck takdir">Takdir</div>
@@ -1174,6 +1202,96 @@
 	{#key loseFx.n}
 		<div class="lose-vignette" style:--i={Math.min(1, (loseFx.streak - 2) * 0.28)} aria-hidden="true"></div>
 	{/key}
+{/if}
+
+{#if winPaper && winner}
+	{@const NAMA = winner.name.toUpperCase()}
+	<div class="paper-backdrop" role="dialog" aria-modal="true" aria-label="Koran kemenangan" onclick={() => (winPaper = false)}>
+		<div class="newspaper" onclick={(e) => e.stopPropagation()}>
+			<button class="paper-x" onclick={() => (winPaper = false)} aria-label="Tutup">✕</button>
+			<header class="np-mast">
+				<div class="np-meta">{todayLong()} · Harga eceran kecil</div>
+				<h1 class="np-brand"><span class="np-logo">H</span>HARIAN <b>NUSANTARA</b></h1>
+				<div class="np-strap">EDISI KEMENANGAN · JADI WNI</div>
+			</header>
+
+			<h2 class="np-head">{NAMA} MASUK JAJARAN<br />‘SEMBILAN NAGA’</h2>
+			<p class="np-deck">Gebrakan Sang Orang Kaya Baru (OKB) Mengguncang Peta Bisnis Nasional</p>
+			<div class="np-byline">Oleh Redaksi Netizen · {todayLong()}</div>
+
+			<div class="np-cols">
+				<div class="np-col">
+					<p class="np-lead">
+						<span class="np-drop">{winner.name.charAt(0).toUpperCase()}</span>{winner.name},
+						sosok misterius yang kini resmi sejajar dengan para konglomerat papan atas tanah air,
+						<strong>telah berhasil masuk jajaran 9 naga</strong> setelah kekayaan bersihnya menembus
+						<strong>{formatRp(winWorth)}</strong>.
+					</p>
+					<p>
+						Dari Rumah Subsidi hingga kawasan elit, gurita bisnisnya merambah properti, saham, sampai
+						lini usaha yang tak terhitung. Pengamat menyebut kemenangan ini sebagai “akhir yang pantas
+						bagi pemain paling licin di meja”.
+					</p>
+					<h4>Reaksi Pasar</h4>
+					<p>
+						Harga petakan ikut melonjak begitu kabar ini tersiar. Para pesaing dikabarkan gigit jari,
+						sebagian memilih <em>rungkat</em> lebih dulu sebelum tagihan sewa menggunung.
+					</p>
+				</div>
+
+				<div class="np-col np-mid">
+					<figure class="np-figure">
+						{#if WIN_VIDEO_ID}
+							<div class="np-video">
+								<iframe
+									src={`https://www.youtube-nocookie.com/embed/${WIN_VIDEO_ID}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+									title="Tayangan kemenangan"
+									loading="lazy"
+									allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
+									referrerpolicy="strict-origin-when-cross-origin"
+									allowfullscreen
+								></iframe>
+							</div>
+						{:else}
+							<div class="np-photo" style:--c={winner.color}>
+								<span class="np-ava"><Avatar p={winner} /></span>
+								<span class="np-crown">👑</span>
+							</div>
+						{/if}
+						<figcaption>{winner.name} berjalan di antara para pengawal, menuju puncak daftar orang terkaya.</figcaption>
+					</figure>
+					<h4>Gurita Bisnis Baru</h4>
+					<p>
+						Sumber di lingkaran dalam menyebut sang taipan tengah menyiapkan ekspansi besar-besaran,
+						sementara netizen ramai mengucap selamat sekaligus julid seperti biasa.
+					</p>
+				</div>
+
+				<div class="np-col">
+					<h4>Pertumbuhan Kekayaan</h4>
+					<div class="np-chart" aria-hidden="true">
+						{#each [34, 52, 61, 72, 88, 100] as h, i (i)}
+							<span class="np-bar" style:height="{h}%"></span>
+						{/each}
+					</div>
+					<p class="np-cap">Kekayaan bersih menanjak tiap kuartal hingga tembus {formatRp(winWorth)}.</p>
+					<div class="np-divider"></div>
+					<p>
+						Redaksi mengucapkan selamat kepada <strong>{winner.name}</strong>. Hidup itu keras — untung
+						ada teman (dan properti di mana-mana).
+					</p>
+				</div>
+			</div>
+
+			<div class="np-actions">
+				<a class="btn np-wa" href={winWaLink} target="_blank" rel="noopener">
+					<svg viewBox="0 0 32 32" width="18" height="18" aria-hidden="true" fill="currentColor"><path d="M16.004 3.2c-7.07 0-12.8 5.73-12.8 12.8 0 2.26.6 4.46 1.73 6.4L3.2 28.8l6.57-1.72a12.74 12.74 0 0 0 6.23 1.6h.01c7.06 0 12.8-5.73 12.8-12.8 0-3.42-1.33-6.63-3.75-9.05A12.7 12.7 0 0 0 16.004 3.2zm0 2.13c2.85 0 5.52 1.11 7.53 3.12a10.58 10.58 0 0 1 3.12 7.55c0 5.88-4.78 10.66-10.66 10.66h-.01c-1.94 0-3.84-.52-5.5-1.5l-.4-.24-3.9 1.02 1.04-3.8-.26-.4a10.6 10.6 0 0 1-1.62-5.64c0-5.88 4.78-10.66 10.66-10.66zm-5.9 5.73c-.28 0-.73.1-1.11.52-.38.42-1.46 1.43-1.46 3.48s1.5 4.03 1.7 4.31c.21.28 2.95 4.5 7.14 6.14 3.48 1.37 4.19 1.1 4.95 1.03.76-.07 2.45-1 2.8-1.97.35-.97.35-1.8.24-1.97-.1-.17-.38-.28-.8-.49-.42-.21-2.45-1.21-2.83-1.35-.38-.14-.66-.21-.94.21-.28.42-1.08 1.35-1.32 1.63-.24.28-.49.31-.9.1-.42-.21-1.76-.65-3.35-2.07-1.24-1.1-2.07-2.47-2.32-2.89-.24-.42-.03-.64.18-.85.19-.19.42-.49.63-.73.21-.24.28-.42.42-.7.14-.28.07-.52-.04-.73-.1-.21-.92-2.27-1.3-3.1-.32-.74-.65-.73-.9-.74l-.77-.01z"/></svg>
+					Bagikan kemenangan ke WhatsApp
+				</a>
+				<button class="btn" onclick={() => (winPaper = false)}>Tutup</button>
+			</div>
+		</div>
+	</div>
 {/if}
 
 {#if toast}<div class="toast" role="status">{toast}</div>{/if}
@@ -1632,6 +1750,14 @@
 	}
 	.kas strong {
 		font-size: clamp(0.8rem, 1.8vw, 1.1rem);
+	}
+	.kas.bandar {
+		margin-top: 0.3rem;
+		background: #fff4d6;
+		border-color: #a9792b;
+	}
+	.kas.bandar strong.minus {
+		color: var(--merah);
 	}
 	.dice {
 		display: flex;
@@ -2416,6 +2542,240 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.lose-vignette { animation-duration: 2s; }
+	}
+
+	/* ===== koran kemenangan (full page) ===== */
+	.paper-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 95;
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+		background: rgba(12, 18, 30, 0.72);
+		overflow: auto;
+		animation: fadein 0.2s ease both;
+	}
+	.newspaper {
+		position: relative;
+		width: min(900px, 100%);
+		max-height: calc(100dvh - 2rem);
+		overflow: auto;
+		background: #f3ecd9;
+		color: #1a1712;
+		border: 1px solid #c9bfa3;
+		box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+		padding: clamp(1rem, 3vw, 2.2rem);
+		font-family: Georgia, 'Times New Roman', serif;
+		background-image: radial-gradient(rgba(120, 100, 60, 0.05) 1px, transparent 1px);
+		background-size: 4px 4px;
+		animation: paper-in 0.35s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+	}
+	@keyframes paper-in {
+		from { opacity: 0; transform: translateY(14px) rotate(-0.4deg) scale(0.98); }
+		to { opacity: 1; transform: none; }
+	}
+	.paper-x {
+		position: sticky;
+		float: right;
+		top: 0;
+		border: 1px solid #1a1712;
+		background: #1a1712;
+		color: #f3ecd9;
+		width: 30px;
+		height: 30px;
+		border-radius: 50%;
+		font-weight: 700;
+		cursor: pointer;
+		z-index: 2;
+	}
+	.np-mast {
+		text-align: center;
+		border-bottom: 3px double #1a1712;
+		padding-bottom: 0.5rem;
+	}
+	.np-meta {
+		font-size: 0.72rem;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+		border-bottom: 1px solid #1a1712;
+		padding-bottom: 0.3rem;
+		margin-bottom: 0.4rem;
+	}
+	.np-brand {
+		margin: 0.1rem 0;
+		font-size: clamp(1.9rem, 6vw, 3.4rem);
+		font-weight: 900;
+		letter-spacing: 0.02em;
+		line-height: 1;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5rem;
+	}
+	.np-brand b {
+		font-weight: 900;
+		color: #b3261e;
+	}
+	.np-logo {
+		display: inline-grid;
+		place-items: center;
+		width: 1.1em;
+		height: 1.1em;
+		background: #b3261e;
+		color: #f3ecd9;
+		border-radius: 4px;
+		font-size: 0.8em;
+	}
+	.np-strap {
+		font-size: 0.68rem;
+		letter-spacing: 0.3em;
+		text-transform: uppercase;
+	}
+	.np-head {
+		margin: 0.7rem 0 0.2rem;
+		text-align: center;
+		font-size: clamp(1.8rem, 6.5vw, 3.6rem);
+		line-height: 0.98;
+		font-weight: 900;
+		letter-spacing: -0.01em;
+		text-transform: uppercase;
+	}
+	.np-deck {
+		margin: 0;
+		text-align: center;
+		font-size: clamp(0.95rem, 2.4vw, 1.2rem);
+		font-style: italic;
+	}
+	.np-byline {
+		text-align: center;
+		font-size: 0.72rem;
+		text-transform: uppercase;
+		letter-spacing: 0.06em;
+		border-top: 1px solid #1a1712;
+		border-bottom: 1px solid #1a1712;
+		padding: 0.25rem 0;
+		margin: 0.6rem 0 0.9rem;
+	}
+	.np-cols {
+		columns: 3;
+		column-gap: 1.3rem;
+		column-rule: 1px solid #c3b792;
+		font-size: 0.86rem;
+		line-height: 1.45;
+		text-align: justify;
+	}
+	.np-cols p { margin: 0 0 0.7rem; }
+	.np-col { break-inside: avoid-column; }
+	.np-cols h4 {
+		margin: 0.2rem 0 0.35rem;
+		font-size: 0.95rem;
+		text-transform: uppercase;
+		letter-spacing: 0.03em;
+		border-bottom: 2px solid #1a1712;
+	}
+	.np-lead .np-drop {
+		float: left;
+		font-size: 2.9rem;
+		line-height: 0.72;
+		font-weight: 900;
+		padding: 0.1rem 0.35rem 0 0;
+	}
+	.np-figure {
+		margin: 0 0 0.6rem;
+		break-inside: avoid;
+	}
+	.np-video {
+		position: relative;
+		aspect-ratio: 16 / 9;
+		border: 1px solid #1a1712;
+		background: #000;
+		box-shadow: 2px 2px 0 rgba(26, 23, 18, 0.4);
+	}
+	.np-video iframe {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		display: block;
+	}
+	.np-photo {
+		position: relative;
+		height: 150px;
+		display: grid;
+		place-items: center;
+		background: linear-gradient(135deg, #d9cfb4, #b9ad8c);
+		border: 1px solid #1a1712;
+		filter: grayscale(1) contrast(1.05);
+	}
+	.np-ava {
+		width: 92px;
+		height: 92px;
+		border-radius: 50%;
+		overflow: hidden;
+		border: 3px solid #1a1712;
+		box-shadow: 0 0 0 4px var(--c, #777);
+	}
+	.np-ava :global(*) { width: 100%; height: 100%; }
+	.np-crown {
+		position: absolute;
+		top: 8px;
+		right: 12px;
+		font-size: 1.6rem;
+		filter: none;
+	}
+	.np-figure figcaption {
+		font-size: 0.72rem;
+		font-style: italic;
+		padding-top: 0.25rem;
+		border-bottom: 1px solid #c3b792;
+		padding-bottom: 0.4rem;
+	}
+	.np-chart {
+		display: flex;
+		align-items: flex-end;
+		gap: 5px;
+		height: 88px;
+		padding: 0.3rem;
+		border: 1px solid #1a1712;
+		background: #efe7d2;
+	}
+	.np-bar {
+		flex: 1;
+		background: repeating-linear-gradient(45deg, #1a1712 0 3px, #4a443a 3px 6px);
+	}
+	.np-cap {
+		font-size: 0.72rem;
+		font-style: italic;
+		margin-top: 0.3rem;
+	}
+	.np-divider {
+		border-top: 2px solid #1a1712;
+		margin: 0.5rem 0;
+	}
+	.np-actions {
+		margin-top: 1rem;
+		padding-top: 0.8rem;
+		border-top: 3px double #1a1712;
+		display: flex;
+		gap: 0.6rem;
+		justify-content: center;
+		flex-wrap: wrap;
+	}
+	.np-wa {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		background: #25d366;
+		color: #073b23;
+		border: 2px solid #1a1712;
+		font-weight: 800;
+	}
+	.np-wa:hover {
+		background: #1fbe5a;
+	}
+	@media (max-width: 640px) {
+		.np-cols { columns: 1; }
 	}
 
 	/* desktop: kolom kanan pas setinggi layar; scrollbar hanya di dalam isi tiap tab */

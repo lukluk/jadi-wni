@@ -18,6 +18,7 @@ import {
 	STOCKS,
 	STOCK_HISTORY,
 	pickStockNews,
+	usahaById,
 	salaryFor,
 	buildCost,
 	investedCost,
@@ -90,6 +91,7 @@ export function createGame(code, host, opts = {}) {
 		pendingRent: null,
 		ad: null,
 		kasNegara: 0,
+		bandarJudod: 0,
 		decks: { musibah: [], takdir: [] },
 		lastCard: null,
 		seq: 0,
@@ -119,6 +121,7 @@ export function addPlayer(state, user) {
 		jailTurns: 0,
 		jailFree: 0,
 		stocks: {},
+		usaha: null,
 		bankrupt: false
 	});
 	log(state, `${user.name} masuk room.`);
@@ -179,6 +182,7 @@ export function approveJoin(state, hostId, userId) {
 		jailTurns: 0,
 		jailFree: 0,
 		stocks: {},
+		usaha: null,
 		bankrupt: false
 	});
 	log(state, `✅ ${req.name} bergabung di tengah permainan (disetujui host), dapat modal ${formatRp(START_MONEY)}.`);
@@ -234,6 +238,11 @@ function collectSalary(state, p) {
 		state,
 		`${p.name} lewat GAJIAN, terima ${formatRp(amount)}${sawit ? ` (bonus ${sawit} Kebun Sawit ${formatRp(bonus)})` : ''}.`
 	);
+	const u = usahaById(p.usaha);
+	if (u?.income) {
+		p.money += u.income;
+		log(state, `${u.emoji} ${p.name} dapat setoran usaha ${u.name} ${formatRp(u.income)}.`);
+	}
 }
 
 function moveBy(state, p, steps) {
@@ -365,6 +374,22 @@ function burnSawit(state) {
 	if (!burned) log(state, '🔥 Karhutla, tapi tidak ada Kebun Sawit yang terbakar. Untung!');
 }
 
+/** kartu berasset (req) hanya berlaku buat pemain yang punya asetnya */
+function playerHasHouse(state, id) {
+	return Object.entries(state.tiles).some(([i, t]) => t.owner === id && TILES[+i].type === 'property' && (t.level ?? 0) >= 1);
+}
+function playerHasSawit(state, id) {
+	return Object.entries(state.tiles).some(([i, t]) => t.owner === id && TILES[+i].type === 'property' && t.level === SAWIT_LEVEL);
+}
+function cardApplies(state, p, card) {
+	switch (card.req) {
+		case 'house': return playerHasHouse(state, p.id);
+		case 'sawit': return playerHasSawit(state, p.id);
+		case 'usaha': return !!p.usaha;
+		default: return true;
+	}
+}
+
 function drawCard(state, p, deck, rng) {
 	if (!state.decks[deck].length) {
 		// semua kartu (selain Pemutihan yang dipegang) dikocok ulang
@@ -374,7 +399,11 @@ function drawCard(state, p, deck, rng) {
 			rng
 		);
 	}
-	const idx = state.decks[deck].shift();
+	// ambil kartu pertama yang cocok buat pemain ini; kartu berasset dilewati kalau asetnya tak ada
+	const pile = state.decks[deck];
+	let pos = pile.findIndex((k) => cardApplies(state, p, CARDS[deck][k]));
+	if (pos < 0) pos = 0;
+	const idx = pile.splice(pos, 1)[0];
 	const card = CARDS[deck][idx];
 	state.seq += 1;
 	state.lastCard = { seq: state.seq, deck, text: card.text, playerId: p.id, playerName: p.name };
@@ -389,6 +418,18 @@ function drawCard(state, p, deck, rng) {
 
 	if (fx.money > 0) p.money += fx.money;
 	if (fx.money < 0) pay(state, p, -fx.money);
+	if (fx.usahaHit) {
+		const u = usahaById(p.usaha);
+		if (u) {
+			const loss = u.musibahLoss;
+			state.lastCard.text = `💼 ${u.musibah}! Rugi ${formatRp(loss)}.`;
+			log(state, `💼 ${p.name}: ${u.musibah}, rugi ${formatRp(loss)}.`);
+			pay(state, p, loss);
+		} else {
+			state.lastCard.text = '💼 Harusnya usahamu kena musibah — untung kamu belum buka usaha. Lolos!';
+			log(state, `${p.name} belum punya usaha, lolos dari musibah usaha.`);
+		}
+	}
 	if (fx.jail) sendToJail(state, p);
 	if (fx.repairs) {
 		const [perHouse, perOkb] = fx.repairs;
@@ -898,6 +939,17 @@ function tickStocks(state, rng = Math.random) {
 	}
 }
 
+function buildUsaha(state, userId, id) {
+	const p = requireActive(state, userId);
+	if (p.usaha) fail('Kamu sudah punya usaha — cuma boleh satu.');
+	const u = usahaById(id);
+	if (!u) fail('Usaha tidak dikenal.');
+	if (p.money < u.cost) fail(`Modal kurang, butuh ${formatRp(u.cost)}.`);
+	p.money -= u.cost;
+	p.usaha = u.id;
+	log(state, `${u.emoji} ${p.name} buka usaha ${u.name}${u.cost ? ` (modal ${formatRp(u.cost)})` : ' (tanpa modal)'}. Setoran ${formatRp(u.income)}/gajian.`);
+}
+
 function parseQty(v) {
 	const n = Math.floor(Number(v));
 	if (!Number.isFinite(n) || n < 1 || n > 10000) fail('Jumlah lot harus bilangan bulat 1 - 10.000.');
@@ -981,6 +1033,8 @@ function judol(state, userId, amount, rng) {
 	const pct = Math.round((rng() * 2 - 1) * 100);
 	const delta = Math.round((bet * pct) / 100);
 	p.money += delta;
+	// bandar judod sebagai lawan main: pemain menang -> saldo bandar berkurang; pemain kalah -> bertambah
+	state.bandarJudod = (state.bandarJudod ?? 0) - delta;
 	// catat kekalahan judod beruntun (menang/impas = reset) untuk efek layar pemain
 	p.judolLoseStreak = delta < 0 ? (p.judolLoseStreak ?? 0) + 1 : 0;
 	state.seq += 1;
@@ -1344,6 +1398,9 @@ function dispatch(state, userId, action, rng) {
 
 		case 'judol':
 			return judol(state, userId, action.amount, rng);
+
+		case 'buildUsaha':
+			return buildUsaha(state, userId, action.id);
 
 		case 'iklan':
 			return placeAd(state, userId, action.tile);
