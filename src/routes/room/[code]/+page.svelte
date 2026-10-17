@@ -135,6 +135,29 @@
 	let freshTimer;
 	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh);
 
+	// reaksi cepat (ketawa / sedih / tepuk tangan)
+	const REACTIONS = [
+		{ kind: 'ketawa', label: 'Ngakak', emoji: '🤣', gif: '/reactions/ketawa.gif', key: '.' },
+		{ kind: 'sedih', label: 'Sedih banget', emoji: '😭', gif: '/reactions/sedih.gif', key: ',' },
+		{ kind: 'tepuk', label: 'Tepuk tangan', emoji: '👏', gif: '/reactions/tepuk.gif', key: 'h' }
+	];
+	const REACTION_BY_KIND = Object.fromEntries(REACTIONS.map((r) => [r.kind, r]));
+	let reactPop = $state(false);
+	let reactSeq = 0;
+	let reactions = $state(/** @type {any[]} */ ([]));
+	function sendReaction(kind) {
+		reactPop = false;
+		if (!REACTION_BY_KIND[kind]) return;
+		getSocket().emit('reaction', { kind });
+	}
+	function showReaction(r) {
+		if (!REACTION_BY_KIND[r?.kind]) return;
+		const uid = ++reactSeq;
+		const x = Math.round((Math.random() - 0.5) * Math.min(560, (globalThis.innerWidth ?? 800) * 0.6));
+		reactions = [...reactions, { ...r, uid, x }].slice(-8);
+		setTimeout(() => (reactions = reactions.filter((v) => v.uid !== uid)), 3600);
+	}
+
 	// kartu baru muncul setelah dadu berhenti dan bidak sampai
 	$effect(() => {
 		if (!pendingCard || rolling || moving) return;
@@ -326,15 +349,25 @@
 		return null;
 	});
 	function onHotkey(e) {
-		if (e.key === 'Escape' && showLog) {
-			showLog = false;
-			return;
+		if (e.key === 'Escape') {
+			if (reactPop) { reactPop = false; return; }
+			if (showLog) { showLog = false; return; }
+		}
+		const el = /** @type {HTMLElement|null} */ (document.activeElement);
+		const typing =
+			el?.tagName === 'INPUT' || el?.tagName === 'TEXTAREA' || el?.tagName === 'SELECT' || el?.isContentEditable;
+		// reaksi cepat via hotkey (ketawa "." · sedih "," · tepuk tangan "h")
+		if (!e.repeat && !e.metaKey && !e.ctrlKey && !e.altKey && !typing && game && me) {
+			const r = REACTIONS.find((x) => x.key === e.key);
+			if (r) {
+				e.preventDefault();
+				sendReaction(r.kind);
+				return;
+			}
 		}
 		if (e.code !== 'Space' && e.key !== ' ') return;
 		if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
-		const el = /** @type {HTMLElement|null} */ (document.activeElement);
-		const tag = el?.tagName;
-		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+		if (typing) return;
 		const a = spaceAct;
 		if (!a) return;
 		e.preventDefault(); // cegah scroll & klik ganda pada tombol yang kebetulan fokus
@@ -445,6 +478,7 @@
 		s.on('room:state', onState);
 		s.on('chat', onChat);
 		s.on('chat:history', onHistory);
+		s.on('reaction', showReaction);
 		const onRemoteCount = (m) => {
 			remote = m.n ? m : null;
 			if (m.n) play('tick');
@@ -462,6 +496,7 @@
 			s.off('room:state', onState);
 			s.off('chat', onChat);
 			s.off('chat:history', onHistory);
+			s.off('reaction', showReaction);
 			s.off('turn:countdown', onRemoteCount);
 			s.off('connect', onConnect);
 			s.off('disconnect', onDisconnect);
@@ -1072,11 +1107,37 @@
 
 {#if game && me}
 	<div class="bottombar">
+		<div class="react-wrap">
+			{#if reactPop}
+				<div class="react-backdrop" role="presentation" onclick={() => (reactPop = false)}></div>
+				<div class="react-menu" role="menu" aria-label="Pilih reaksi">
+					{#each REACTIONS as r (r.kind)}
+						<button class="react-opt" role="menuitem" onclick={() => sendReaction(r.kind)} title={`${r.label} — tombol "${r.key}"`}>
+							<img src={r.gif} alt={r.label} loading="lazy" />
+							<span class="react-lbl">{r.emoji} {r.label}</span>
+							<kbd>{r.key}</kbd>
+						</button>
+					{/each}
+				</div>
+			{/if}
+			<button class="pill" onclick={() => (reactPop = !reactPop)} aria-expanded={reactPop} aria-label="Kirim reaksi">😂 Reaksi</button>
+		</div>
 		<button class="pill" onclick={() => (showLog = true)}>📜 Kejadian</button>
 		{#if game.status === 'playing' && myPlayer && !myPlayer.bankrupt}
 			<button class="pill" onclick={surrender}>Menyerah</button>
 		{/if}
 	</div>
+
+	{#if reactions.length}
+		<div class="reactions-layer" aria-hidden="true">
+			{#each reactions as r (r.uid)}
+				<div class="react-fly" style:--x="{r.x}px">
+					<img src={REACTION_BY_KIND[r.kind]?.gif} alt="" />
+					<span class="react-who">{r.name}</span>
+				</div>
+			{/each}
+		</div>
+	{/if}
 {/if}
 
 {#if showLog && game}
@@ -1770,6 +1831,110 @@
 		font-weight: 800;
 		font-size: 0.72rem;
 		cursor: pointer;
+	}
+	.react-wrap {
+		position: relative;
+	}
+	.react-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 85;
+	}
+	.react-menu {
+		position: absolute;
+		right: 0;
+		bottom: calc(100% + 0.4rem);
+		z-index: 86;
+		width: 200px;
+		display: grid;
+		gap: 0.3rem;
+		padding: 0.4rem;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 14px;
+		box-shadow: 4px 4px 0 var(--ink);
+		animation: rentin 0.18s ease both;
+	}
+	.react-opt {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0.4rem;
+		border: 2px solid var(--ink);
+		border-radius: 10px;
+		background: #fff;
+		cursor: pointer;
+		font-weight: 700;
+		font-size: 0.82rem;
+		text-align: left;
+	}
+	.react-opt:hover {
+		background: #fff3c4;
+	}
+	.react-opt img {
+		width: 38px;
+		height: 38px;
+		object-fit: cover;
+		border-radius: 7px;
+		border: 1px solid var(--ink);
+		flex: none;
+		background: #eee;
+	}
+	.react-lbl {
+		flex: 1 1 auto;
+		min-width: 0;
+	}
+	.react-opt kbd {
+		flex: none;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.72rem;
+		background: var(--ink);
+		color: #fff;
+		border-radius: 5px;
+		padding: 0.05rem 0.35rem;
+	}
+	.reactions-layer {
+		position: fixed;
+		inset: 0;
+		z-index: 83;
+		pointer-events: none;
+		overflow: hidden;
+	}
+	.react-fly {
+		position: absolute;
+		left: 50%;
+		bottom: 3.5rem;
+		display: grid;
+		justify-items: center;
+		gap: 0.2rem;
+		transform: translateX(calc(-50% + var(--x, 0px)));
+		animation: react-rise 3.6s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+	}
+	.react-fly img {
+		width: clamp(96px, 22vw, 150px);
+		height: auto;
+		border: 3px solid var(--ink);
+		border-radius: 12px;
+		box-shadow: 3px 3px 0 var(--ink);
+		background: #fff;
+	}
+	.react-who {
+		font-weight: 800;
+		font-size: 0.78rem;
+		color: #fff;
+		background: var(--ink);
+		border-radius: 999px;
+		padding: 0.1rem 0.6rem;
+	}
+	@keyframes react-rise {
+		0% { opacity: 0; transform: translateX(calc(-50% + var(--x, 0px))) translateY(30px) scale(0.6); }
+		12% { opacity: 1; transform: translateX(calc(-50% + var(--x, 0px))) translateY(0) scale(1); }
+		75% { opacity: 1; }
+		100% { opacity: 0; transform: translateX(calc(-50% + var(--x, 0px))) translateY(-90px) scale(0.95); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.react-fly { animation: react-fade 3.6s ease both; }
+		@keyframes react-fade { 0% { opacity: 0; } 10%, 80% { opacity: 1; } 100% { opacity: 0; } }
 	}
 	.log-backdrop {
 		position: fixed;

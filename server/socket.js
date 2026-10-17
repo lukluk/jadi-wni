@@ -216,6 +216,7 @@ export function attachSocket(httpServer) {
 		socket.emit('server:boot', BOOT_ID);
 		/** @type {string|null} */
 		let joined = null;
+		let lastReactionAt = 0;
 
 		/** @type {string|null} room tempat socket ini ikut obrolan suara (WebRTC mesh; server hanya relay sinyal) */
 		let inVoice = null;
@@ -391,6 +392,17 @@ export function attachSocket(httpServer) {
 			if (list.length > CHAT_LIMIT) list.shift();
 			chats.set(joined, list);
 			io.to(joined).emit('chat', msg);
+		});
+
+		// reaksi cepat (ketawa / sedih / tepuk tangan) — efemeral, tidak dipersist
+		socket.on('reaction', (payload) => {
+			if (!joined) return;
+			const kind = String(payload?.kind ?? '');
+			if (!['ketawa', 'sedih', 'tepuk'].includes(kind)) return;
+			const now = Date.now();
+			if (now - lastReactionAt < 500) return; // anti-spam
+			lastReactionAt = now;
+			io.to(joined).emit('reaction', { id: user.id, name: user.name, kind, t: now });
 		});
 
 		socket.on('voice:join', (_p, ack) => {
