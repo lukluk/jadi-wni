@@ -125,6 +125,13 @@
 			<div><b>2</b><span>Lempar dadu, beli & bangun</span></div>
 			<div><b>3</b><span>Kaya Rp 10 M = menang</span></div>
 		</div>
+
+		<a class="wa" href="https://chat.whatsapp.com/IMQ8qCWtcEB2BPXqw1StJi" target="_blank" rel="noopener noreferrer">
+			<svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true" fill="currentColor">
+				<path d="M16.004 3.2c-7.07 0-12.8 5.73-12.8 12.8 0 2.26.6 4.46 1.73 6.4L3.2 28.8l6.57-1.72a12.74 12.74 0 0 0 6.23 1.6h.01c7.06 0 12.8-5.73 12.8-12.8 0-3.42-1.33-6.63-3.75-9.05A12.7 12.7 0 0 0 16.004 3.2zm0 2.13c2.85 0 5.52 1.11 7.53 3.12a10.58 10.58 0 0 1 3.12 7.55c0 5.88-4.78 10.66-10.66 10.66h-.01c-1.94 0-3.84-.52-5.5-1.5l-.4-.24-3.9 1.02 1.04-3.8-.26-.4a10.6 10.6 0 0 1-1.62-5.64c0-5.88 4.78-10.66 10.66-10.66zm-5.9 5.73c-.28 0-.73.1-1.11.52-.38.42-1.46 1.43-1.46 3.48s1.5 4.03 1.7 4.31c.21.28 2.95 4.5 7.14 6.14 3.48 1.37 4.19 1.1 4.95 1.03.76-.07 2.45-1 2.8-1.97.35-.97.35-1.8.24-1.97-.1-.17-.38-.28-.8-.49-.42-.21-2.45-1.21-2.83-1.35-.38-.14-.66-.21-.94.21-.28.42-1.08 1.35-1.32 1.63-.24.28-.49.31-.9.1-.42-.21-1.76-.65-3.35-2.07-1.24-1.1-2.07-2.47-2.32-2.89-.24-.42-.03-.64.18-.85.19-.19.42-.49.63-.73.21-.24.28-.42.42-.7.14-.28.07-.52-.04-.73-.1-.21-.92-2.27-1.3-3.1-.32-.74-.65-.73-.9-.74l-.77-.01z"/>
+			</svg>
+			<span>Bergabung ke komunitas Jadi-WNI</span>
+		</a>
 	</section>
 
 	<section class="levels" aria-label="Level rumah">
@@ -442,6 +449,34 @@
 		border: 2px solid var(--ink);
 		border-radius: 50%;
 		font-size: 1rem;
+	}
+	.wa {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.55rem;
+		margin-top: 0.3rem;
+		padding: 0.7rem 1rem;
+		background: #25d366;
+		color: #0b3d25;
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		box-shadow: 0 3px 0 var(--ink);
+		font-weight: 800;
+		font-size: 0.95rem;
+		text-decoration: none;
+		transition: transform 0.08s ease, box-shadow 0.08s ease;
+	}
+	.wa:hover {
+		transform: translateY(-1px);
+		box-shadow: 0 4px 0 var(--ink);
+	}
+	.wa:active {
+		transform: translateY(2px);
+		box-shadow: 0 1px 0 var(--ink);
+	}
+	.wa svg {
+		flex: none;
 	}
 
 	/* ---------- Deretan rumah di atas tanah ---------- */

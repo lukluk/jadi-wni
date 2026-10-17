@@ -245,6 +245,12 @@
 	const inviteUrl = $derived(`${page.url.origin}/room/${data.code}`);
 	const myPlayer = $derived(game?.players.find((p) => p.id === me?.id));
 	const isHost = $derived(game?.hostId === me?.id);
+	// gabung di tengah permainan (perlu persetujuan host)
+	const joinReqs = $derived(game?.joinRequests ?? []);
+	const iRequestedJoin = $derived(joinReqs.some((r) => r.id === me?.id));
+	const canRequestJoin = $derived(
+		game?.status === 'playing' && !myPlayer && game.players.length < MAX_PLAYERS
+	);
 	const cur = $derived(game?.status === 'playing' ? game.players[game.turn] : null);
 	const myTurn = $derived(!!cur && cur.id === me?.id);
 	const curOnline = $derived(!!cur && game.online.includes(cur.id));
@@ -933,6 +939,31 @@
 	{/if}
 {/if}
 
+{#if isHost && joinReqs.length}
+	<div class="join-pop" role="alertdialog" aria-live="polite">
+		<strong>✋ Minta gabung ({joinReqs.length})</strong>
+		{#each joinReqs as r (r.id)}
+			<div class="join-row">
+				<span class="join-name">{r.name}</span>
+				<button class="btn primary small" disabled={busy || game.players.length >= MAX_PLAYERS} onclick={() => emit('room:joinApprove', { userId: r.id })}>Setujui</button>
+				<button class="btn small" disabled={busy} onclick={() => emit('room:joinReject', { userId: r.id })}>Tolak</button>
+			</div>
+		{/each}
+		{#if game.players.length >= MAX_PLAYERS}<small>Room penuh (maks {MAX_PLAYERS}).</small>{/if}
+	</div>
+{/if}
+
+{#if canRequestJoin}
+	<div class="spectate-join" role="status">
+		{#if iRequestedJoin}
+			<span>⏳ Menunggu host menyetujui kamu gabung…</span>
+		{:else}
+			<span>Kamu menonton.</span>
+			<button class="btn primary small" disabled={busy} onclick={() => emit('room:joinRequest')}>✋ Minta gabung</button>
+		{/if}
+	</div>
+{/if}
+
 {#if kvInfo}
 	<div class="kick-pop" role="alertdialog" aria-live="polite">
 		<strong>🗳️ Keluarkan {kvInfo.target?.name ?? 'pemain'}?</strong>
@@ -965,8 +996,8 @@
 	<div class="ad-wrap" role="alertdialog" aria-live="assertive" aria-label="Iklan properti">
 		<div class="ad-card">
 			<span class="ad-flag">📺 IKLAN</span>
-			{#if cityImages[game.ad.name]}
-				<div class="ad-photo" style:background-image={`url("${cityImages[game.ad.name].url}")`}></div>
+			{#if game.ad.img || cityImages[game.ad.name]}
+				<div class="ad-photo" style:background-image={`url("${game.ad.img ?? cityImages[game.ad.name].url}")`}></div>
 			{/if}
 			<p class="ad-text">{game.ad.text}</p>
 			<small class="ad-by">Dipersembahkan oleh {game.ad.byName}</small>
@@ -1216,6 +1247,52 @@
 		border-radius: 12px;
 		box-shadow: 4px 4px 0 var(--ink);
 		animation: rentin 0.25s ease both;
+	}
+	.join-pop {
+		position: fixed;
+		top: 4.6rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 67;
+		width: min(400px, calc(100vw - 2rem));
+		display: grid;
+		gap: 0.4rem;
+		padding: 0.7rem 0.9rem;
+		background: #e7f8ec;
+		border: 3px solid var(--ink);
+		border-radius: 12px;
+		box-shadow: 4px 4px 0 var(--ink);
+		animation: rentin 0.25s ease both;
+	}
+	.join-row {
+		display: flex;
+		align-items: center;
+		gap: 0.4rem;
+	}
+	.join-name {
+		flex: 1 1 auto;
+		min-width: 0;
+		font-weight: 700;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	.spectate-join {
+		position: fixed;
+		bottom: calc(1.25rem + var(--ticker-h, 0px));
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 67;
+		display: flex;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.5rem 0.8rem;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 999px;
+		box-shadow: 4px 4px 0 var(--ink);
+		font-weight: 700;
+		font-size: 0.9rem;
 	}
 	.ko-opt {
 		display: flex;

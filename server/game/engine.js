@@ -138,6 +138,57 @@ export function removePlayer(state, userId) {
 	}
 }
 
+/** Pemain baru minta gabung saat game sudah berjalan (perlu persetujuan host). */
+export function requestJoin(state, user) {
+	if (state.status !== 'playing') fail('Permintaan gabung hanya saat game berjalan.');
+	if (playerById(state, user.id)) fail('Kamu sudah jadi pemain.');
+	if (state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
+	state.joinRequests ??= [];
+	if (state.joinRequests.some((r) => r.id === user.id)) return; // sudah antre
+	state.joinRequests.push({ id: user.id, name: user.name, avatar: user.avatar ?? null, at: Date.now() });
+	log(state, `✋ ${user.name} minta gabung di tengah permainan.`);
+}
+
+function dropJoinRequest(state, userId) {
+	const reqs = state.joinRequests ?? [];
+	const idx = reqs.findIndex((r) => r.id === userId);
+	if (idx < 0) return null;
+	return reqs.splice(idx, 1)[0];
+}
+
+/** Host menyetujui: pemain masuk di tengah permainan dengan modal awal, taruh di GAJIAN. */
+export function approveJoin(state, hostId, userId) {
+	if (state.hostId !== hostId) fail('Hanya host yang bisa menyetujui pemain baru.');
+	if (state.status !== 'playing') fail('Game belum berjalan.');
+	const req = dropJoinRequest(state, userId);
+	if (!req) fail('Permintaan gabung tidak ada.');
+	if (playerById(state, req.id)) return;
+	if (state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
+	const usedTokens = new Set(state.players.map((p) => p.token));
+	const usedColors = new Set(state.players.map((p) => p.color));
+	state.players.push({
+		id: req.id,
+		name: req.name,
+		avatar: req.avatar ?? null,
+		token: (TOKENS.find((t) => !usedTokens.has(t.id)) ?? TOKENS[0]).id,
+		color: PLAYER_COLORS.find((c) => !usedColors.has(c)) ?? PLAYER_COLORS[0],
+		money: START_MONEY,
+		pos: 0,
+		inJail: false,
+		jailTurns: 0,
+		jailFree: 0,
+		stocks: {},
+		bankrupt: false
+	});
+	log(state, `✅ ${req.name} bergabung di tengah permainan (disetujui host), dapat modal ${formatRp(START_MONEY)}.`);
+}
+
+export function rejectJoin(state, hostId, userId) {
+	if (state.hostId !== hostId) fail('Hanya host yang bisa menolak.');
+	const req = dropJoinRequest(state, userId);
+	if (req) log(state, `🚫 Host menolak permintaan gabung ${req.name}.`);
+}
+
 export function startGame(state, rng = Math.random) {
 	if (state.status !== 'lobby') fail('Game sudah dimulai.');
 	if (state.players.length < MIN_PLAYERS) fail(`Minimal ${MIN_PLAYERS} pemain.`);

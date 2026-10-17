@@ -6,6 +6,9 @@ import {
 	createGame,
 	addPlayer,
 	removePlayer,
+	requestJoin,
+	approveJoin,
+	rejectJoin,
 	startGame,
 	applyAction,
 	forceSkip,
@@ -17,7 +20,7 @@ import {
 	GameError
 } from './game/engine.js';
 import { TOKENS } from '../src/lib/shared/board.js';
-import { refreshCityImages } from './cityImages.js';
+import { refreshCityImages, getCityImages } from './cityImages.js';
 import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
 import { botStep, maybeAddBot } from './bot.js';
@@ -304,6 +307,15 @@ export function attachSocket(httpServer) {
 			ack?.({ ok: true });
 		});
 
+		// pemain baru minta gabung saat game berjalan (perlu persetujuan host)
+		socket.on('room:joinRequest', (_p, ack) => mutate((state) => requestJoin(state, user), ack));
+		socket.on('room:joinApprove', (payload, ack) =>
+			mutate((state) => approveJoin(state, user.id, payload?.userId), ack)
+		);
+		socket.on('room:joinReject', (payload, ack) =>
+			mutate((state) => rejectJoin(state, user.id, payload?.userId), ack)
+		);
+
 		socket.on('room:kick', (payload, ack) =>
 			mutate((state) => {
 				if (state.hostId !== user.id) throw new GameError('Hanya host yang bisa mengeluarkan pemain.');
@@ -349,7 +361,15 @@ export function attachSocket(httpServer) {
 		});
 
 		socket.on('game:action', (action, ack) =>
-			mutate((state) => applyAction(state, user.id, action), ack)
+			mutate((state) => {
+				applyAction(state, user.id, action);
+				// Sematkan URL foto ke iklan dari cache server, supaya modal iklan
+				// tak bergantung pada fetch /api/city-images di tiap client (bisa kosong
+				// sesaat setelah deploy saat cache pod masih dingin).
+				if (action?.type === 'iklan' && state.ad && !('img' in state.ad)) {
+					state.ad.img = getCityImages()[state.ad.name]?.url ?? null;
+				}
+			}, ack)
 		);
 
 		socket.on('game:skip', (_p, ack) =>
