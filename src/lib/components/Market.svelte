@@ -35,6 +35,8 @@
 			{@const mineL = l.seller === meId}
 			{@const offers = Object.entries(l.offers ?? {})}
 			{@const myOffer = l.offers?.[meId]}
+			{@const listed = l.price != null}
+			{@const negoDefault = myOffer ?? (listed ? Math.round(l.price * 0.8) : (l.tile.price ?? 1))}
 			<article class="item" class:mine={mineL}>
 				<header>
 					<button class="name" onclick={() => !isCardKey(l.i) && onTile(l.i)} title="Lihat detail petak">
@@ -42,7 +44,7 @@
 						{l.tile.name}
 						{#if (game.tiles[l.i]?.level ?? 0) > 0}<small>lv {game.tiles[l.i].level}</small>{/if}
 					</button>
-					<strong class="price">{formatRp(l.price)}</strong>
+					<strong class="price">{listed ? formatRp(l.price) : '💬 ditawar'}</strong>
 				</header>
 				<div class="seller">
 					<span class="dot" style:background={colorOf(l.seller)}></span>{mineL ? 'Kamu' : nameOf(l.seller)}
@@ -65,8 +67,8 @@
 							value={draft('l' + l.i, l.price)}
 							oninput={(e) => (drafts['l' + l.i] = e.currentTarget.value)}
 						/>
-						<button class="btn small" disabled={!valid(draft('l' + l.i, l.price))}>Ubah harga</button>
-						<button type="button" class="btn small" onclick={() => onAction({ type: 'mkUnlist', tile: l.i })}>Tarik</button>
+						<button class="btn small" disabled={!valid(draft('l' + l.i, l.price))}>{listed ? 'Ubah harga' : 'Pasang harga'}</button>
+						<button type="button" class="btn small" onclick={() => onAction({ type: 'mkUnlist', tile: l.i })}>{listed ? 'Tarik' : 'Tolak semua'}</button>
 					</form>
 					{#if offers.length}
 						<ul class="offers">
@@ -84,10 +86,12 @@
 					{/if}
 				{:else if me}
 					<div class="row">
-						<button class="btn primary small" disabled={me.money < l.price} onclick={() => onAction({ type: 'mkBuy', tile: l.i })}>
-							Beli {formatRp(l.price)}
-						</button>
-						<button class="btn small" onclick={() => (nego[l.i] = !nego[l.i])} aria-expanded={!!nego[l.i]}>Nego</button>
+						{#if listed}
+							<button class="btn primary small" disabled={me.money < l.price} onclick={() => onAction({ type: 'mkBuy', tile: l.i })}>
+								Beli {formatRp(l.price)}
+							</button>
+						{/if}
+						<button class="btn small" onclick={() => (nego[l.i] = !nego[l.i])} aria-expanded={!!nego[l.i]}>{myOffer != null ? 'Ubah tawaran' : 'Nego'}</button>
 					</div>
 					{#if myOffer != null}
 						<p class="hint">
@@ -100,7 +104,7 @@
 							class="row"
 							onsubmit={(e) => {
 								e.preventDefault();
-								onAction({ type: 'mkOffer', tile: l.i, price: num(draft('o' + l.i, Math.round(l.price * 0.8))) });
+								onAction({ type: 'mkOffer', tile: l.i, price: num(draft('o' + l.i, negoDefault)) });
 								nego[l.i] = false;
 							}}
 						>
@@ -109,10 +113,10 @@
 								min="1"
 								inputmode="numeric"
 								aria-label={`Tawaran untuk ${l.tile.name} (jt)`}
-								value={draft('o' + l.i, Math.round(l.price * 0.8))}
+								value={draft('o' + l.i, negoDefault)}
 								oninput={(e) => (drafts['o' + l.i] = e.currentTarget.value)}
 							/>
-							<button class="btn yellow small" disabled={!valid(draft('o' + l.i, Math.round(l.price * 0.8)))}>Kirim tawaran</button>
+							<button class="btn yellow small" disabled={!valid(draft('o' + l.i, negoDefault))}>Kirim tawaran</button>
 						</form>
 					{/if}
 				{/if}

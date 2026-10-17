@@ -241,6 +241,37 @@ test('marketplace: nego, tolak, terima', () => {
 	assert.equal(s.market[1], undefined);
 });
 
+test('marketplace: tawar aset yang belum dijual, lalu terima', () => {
+	const s = newGame(2, seeded(21));
+	const [a, b] = s.players.map((p) => p.id);
+	s.tiles[1] = { owner: a, level: 0, mortgaged: false };
+	assert.throws(() => applyAction(s, a, { type: 'mkOffer', tile: 1, price: 40 }), /asetmu sendiri/); // pemilik tak boleh menawar
+	applyAction(s, b, { type: 'mkOffer', tile: 1, price: 40 }); // belum ada listing -> buat kontainer tawaran
+	assert.equal(s.market[1].price, null);
+	assert.deepEqual(s.market[1].offers, { [b]: 40 });
+	assert.throws(() => applyAction(s, b, { type: 'mkBuy', tile: 1 }), /belum dipasang harga/); // tak ada harga jual
+	const sellerBefore = s.players[0].money;
+	applyAction(s, a, { type: 'mkAccept', tile: 1, buyer: b });
+	assert.equal(s.tiles[1].owner, b);
+	assert.equal(s.players[0].money, sellerBefore + 40);
+	assert.equal(s.market[1], undefined);
+});
+
+test('marketplace: kontainer tawaran tanpa harga hilang saat tawaran terakhir dibatalkan/ditolak', () => {
+	const s = newGame(2, seeded(22));
+	const [a, b] = s.players.map((p) => p.id);
+	s.tiles[1] = { owner: a, level: 0, mortgaged: false };
+	applyAction(s, b, { type: 'mkOffer', tile: 1, price: 30 });
+	applyAction(s, b, { type: 'mkCancelOffer', tile: 1 });
+	assert.equal(s.market[1], undefined); // kontainer kosong tanpa harga dibersihkan
+	applyAction(s, b, { type: 'mkOffer', tile: 1, price: 35 });
+	applyAction(s, a, { type: 'mkReject', tile: 1, buyer: b });
+	assert.equal(s.market[1], undefined);
+	// aset digadai tidak bisa ditawar
+	s.tiles[1].mortgaged = true;
+	assert.throws(() => applyAction(s, b, { type: 'mkOffer', tile: 1, price: 30 }), /digadai/);
+});
+
 test('marketplace: aset bergedung / digadai tidak bisa dijual, bangkrut bersihkan listing', () => {
 	const s = newGame(2, seeded(13));
 	const [a, b] = s.players.map((p) => p.id);

@@ -28,7 +28,8 @@
 		surrenderPlan,
 		formatAmt,
 		salaryFor,
-		SLOT_SYMBOLS
+		SLOT_SYMBOLS,
+		AD_SKIP_COST
 	} from '$lib/shared/board.js';
 
 	let { data } = $props();
@@ -300,6 +301,7 @@
 	// aksi utama yang dipicu tombol Spasi (null = tidak ada aksi sekarang). Syaratnya menyamai tombol di layar.
 	const spaceAct = $derived.by(() => {
 		if (!game || game.status !== 'playing' || !myTurn || !myPlayer || busy || rolling || moving) return null;
+		if (adBlocked) return null; // iklan menghalangi semua aksi
 		if (showRent && rentInfo && rentInfo.short <= 0) return { type: 'payRent' };
 		if (game.phase === 'roll' && myPlayer.money >= 0) return { type: 'roll' };
 		if (game.phase === 'buy' && pendingTile && myPlayer.money >= pendingTile.price) return { type: 'buy' };
@@ -327,10 +329,18 @@
 	let clockOffset = 0;
 	let nowMs = $state(Date.now());
 	$effect(() => {
-		if (game?.phase !== 'rent' && !game?.kickVote && !game?.koWarnUntil) return;
+		if (game?.phase !== 'rent' && !game?.kickVote && !game?.koWarnUntil && !game?.ad) return;
 		const iv = setInterval(() => (nowMs = Date.now()), 250);
 		return () => clearInterval(iv);
 	});
+	// iklan: hitung mundur & status "aku terganggu" / "iklanku tayang"
+	const adLeft = $derived(
+		game?.ad ? Math.max(0, Math.ceil((game.ad.deadline - (nowMs + clockOffset)) / 1000)) : 0
+	);
+	const adBlocked = $derived(
+		!!game?.ad && adLeft > 0 && !!me && game.ad.by !== me.id && !game.ad.skipped.includes(me.id)
+	);
+	const adMine = $derived(!!game?.ad && adLeft > 0 && !!me && game.ad.by === me.id);
 	const koLeft = $derived(
 		game?.koWarnUntil ? Math.max(0, Math.ceil((game.koWarnUntil - (nowMs + clockOffset)) / 1000)) : 0
 	);
@@ -522,7 +532,7 @@
 	let countdown = $state(/** @type {number|null} */ (null));
 	$effect(() => {
 		const ready =
-			myTurn && game.phase === 'end' && myPlayer.money >= 0 && !rolling && !moving && !card && !pendingCard;
+			myTurn && game.phase === 'end' && myPlayer.money >= 0 && !rolling && !moving && !card && !pendingCard && !game.paused;
 		if (!ready) {
 			countdown = null;
 			return;
@@ -882,6 +892,9 @@
 			{#if game.status === 'playing' && isHost}
 				<div class="danger">
 					{#if isHost}
+						<button class="btn small" onclick={() => act({ type: 'pause', on: !game.paused })}>
+							{game.paused ? '▶️ Lanjutkan game' : '⏸️ Jeda game'}
+						</button>
 						<button class="btn small" onclick={() => act({ type: 'autoPlay', on: !game.autoPlay })}>
 							{game.autoPlay ? '🤖 Matikan auto-play AI' : '🤖 Auto-play AI'}
 						</button>
@@ -935,6 +948,28 @@
 		</small>
 		<small>Jual/beli aset, bangun, atau mainkan saham untuk menaikkan kekayaan bersihmu.</small>
 	</div>
+{/if}
+
+{#if adBlocked}
+	<div class="ad-wrap" role="alertdialog" aria-live="assertive" aria-label="Iklan properti">
+		<div class="ad-card">
+			<span class="ad-flag">📺 IKLAN</span>
+			{#if cityImages[game.ad.name]}
+				<div class="ad-photo" style:background-image={`url("${cityImages[game.ad.name].url}")`}></div>
+			{/if}
+			<p class="ad-text">{game.ad.text}</p>
+			<small class="ad-by">Dipersembahkan oleh {game.ad.byName}</small>
+			<div class="ad-actions">
+				<span class="ad-count">{adLeft} dtk</span>
+				<button class="btn primary" disabled={busy || (!!myPlayer && myPlayer.money < AD_SKIP_COST)} onclick={() => act({ type: 'iklanSkip' })}>
+					Skip — bayar {formatRp(AD_SKIP_COST)}
+				</button>
+			</div>
+			{#if myPlayer && myPlayer.money < AD_SKIP_COST}<small class="ad-poor">Uang kurang untuk skip — tunggu iklan selesai.</small>{/if}
+		</div>
+	</div>
+{:else if adMine}
+	<div class="ad-mine" role="status">📺 Iklanmu tayang — pemain lain ketahan {adLeft} dtk</div>
 {/if}
 
 {#if showRent && rentInfo}
@@ -1015,6 +1050,19 @@
 			{:else}
 				<p class="empty">Belum ada kejadian.</p>
 			{/each}
+		</div>
+	</div>
+{/if}
+
+{#if game?.paused && game.status === 'playing'}
+	<div class="pause-overlay" role="alertdialog" aria-live="assertive" aria-label="Game dijeda">
+		<div class="pause-card">
+			<span class="pause-ico" aria-hidden="true">⏸️</span>
+			<strong>Game dijeda host</strong>
+			<p>Semua aksi dihentikan sementara. {isHost ? 'Tekan tombol di bawah untuk melanjutkan.' : 'Tunggu host melanjutkan permainan.'}</p>
+			{#if isHost}
+				<button class="btn primary" onclick={() => act({ type: 'pause', on: false })}>▶️ Lanjutkan game</button>
+			{/if}
 		</div>
 	</div>
 {/if}
@@ -1207,6 +1255,86 @@
 	}
 	.ko-pop.danger b {
 		color: #fff;
+	}
+	/* iklan properti: overlay yang benar-benar memblok semua aksi pemain lain */
+	.ad-wrap {
+		position: fixed;
+		inset: 0;
+		z-index: 90;
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+		background: rgba(20, 33, 61, 0.8);
+		backdrop-filter: blur(2px);
+	}
+	.ad-card {
+		width: min(420px, 100%);
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 16px;
+		box-shadow: 8px 8px 0 var(--ink);
+		padding: 1rem 1.1rem 1.2rem;
+		display: grid;
+		gap: 0.55rem;
+		text-align: center;
+		animation: rentin 0.25s ease both;
+	}
+	.ad-flag {
+		justify-self: center;
+		background: var(--merah);
+		color: #fff;
+		font-weight: 800;
+		font-size: 0.78rem;
+		letter-spacing: 0.12em;
+		padding: 0.15rem 0.7rem;
+		border-radius: 999px;
+		border: 2px solid var(--ink);
+	}
+	.ad-photo {
+		height: 150px;
+		border: 2px solid var(--ink);
+		border-radius: 10px;
+		background-size: cover;
+		background-position: center;
+	}
+	.ad-text {
+		margin: 0;
+		font-size: 1.15rem;
+		font-weight: 800;
+		line-height: 1.3;
+	}
+	.ad-by {
+		color: var(--ink-soft);
+	}
+	.ad-actions {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.8rem;
+		margin-top: 0.2rem;
+	}
+	.ad-count {
+		font-variant-numeric: tabular-nums;
+		font-weight: 800;
+		font-size: 1.3rem;
+	}
+	.ad-poor {
+		color: var(--merah-deep);
+		font-weight: 600;
+	}
+	.ad-mine {
+		position: fixed;
+		top: 4.6rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 66;
+		background: var(--angkot);
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		padding: 0.3rem 0.85rem;
+		font-weight: 800;
+		font-size: 0.85rem;
+		box-shadow: 0 3px 0 var(--ink);
 	}
 	.kick-acts {
 		display: flex;
@@ -1959,6 +2087,54 @@
 		font-weight: 600;
 		z-index: 60;
 		max-width: calc(100vw - 2rem);
+	}
+
+	.pause-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 90;
+		display: grid;
+		place-items: center;
+		padding: 1rem;
+		background: rgba(20, 33, 61, 0.55);
+		backdrop-filter: blur(3px);
+		animation: fadein 0.2s ease both;
+	}
+	.pause-card {
+		width: min(360px, calc(100vw - 2rem));
+		display: grid;
+		justify-items: center;
+		gap: 0.5rem;
+		padding: 1.4rem 1.2rem;
+		text-align: center;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 16px;
+		box-shadow: 6px 6px 0 var(--ink);
+	}
+	.pause-ico {
+		font-size: 2.6rem;
+		line-height: 1;
+		animation: pausepulse 1.8s ease-in-out infinite;
+	}
+	.pause-card strong {
+		font-size: 1.3rem;
+	}
+	.pause-card p {
+		margin: 0;
+		font-size: 0.9rem;
+		color: var(--ink-soft);
+	}
+	.pause-card .btn {
+		margin-top: 0.4rem;
+	}
+	@keyframes fadein {
+		from { opacity: 0; }
+		to { opacity: 1; }
+	}
+	@keyframes pausepulse {
+		0%, 100% { transform: scale(1); opacity: 0.9; }
+		50% { transform: scale(1.12); opacity: 1; }
 	}
 
 	/* desktop: kolom kanan pas setinggi layar; scrollbar hanya di dalam isi tiap tab */

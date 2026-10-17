@@ -11,6 +11,7 @@ import {
 	forceSkip,
 	expireRent,
 	expireKick,
+	expireAd,
 	knockoutTick,
 	publicState,
 	GameError
@@ -150,8 +151,9 @@ export function attachSocket(httpServer) {
 	setInterval(() => {
 		for (const state of rooms.values()) {
 			try {
+				if (state.paused) continue; // jeda host: hentikan semua batas waktu
 				const hostHere = (presence.get(state.code)?.get(state.hostId) ?? 0) > 0;
-				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state) | knockoutTick(state)) {
+				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state) | knockoutTick(state) | expireAd(state)) {
 					persist(state);
 					broadcast(io, state);
 				}
@@ -165,6 +167,7 @@ export function attachSocket(httpServer) {
 	setInterval(() => {
 		for (const state of rooms.values()) {
 			try {
+				if (state.paused) continue; // jeda host: AI & bot berhenti
 				if (autopilotStep(state) || botStep(state)) {
 					persist(state);
 					broadcast(io, state);

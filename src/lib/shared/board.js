@@ -277,6 +277,24 @@ export const WIN_NETWORTH = 10000;
 
 export const formatRp = (n) => `${n < 0 ? '-' : ''}Rp ${formatAmt(n)}`;
 
+/** Iklan properti (fitur "Pasang Iklan"): durasi tayang & biaya force-skip. */
+export const AD_SECONDS = 20;
+export const AD_SKIP_COST = 25; // Rp 25 jt untuk skip paksa, masuk Kas Negara
+/** biaya pasang iklan = 25% harga properti */
+export const adCost = (tile) => Math.round((tile?.price ?? 0) * 0.25);
+/** teks iklan statis per properti (bervariasi berdasarkan indeks petak) */
+export function adCopy(tile) {
+	const area = GROUPS[tile.group]?.label ?? 'kota';
+	const taglines = [
+		'fasilitas lengkap, akses tol & transportasi, cocok buat investasi!',
+		'lingkungan asri, dekat mall & kuliner, harga dijamin naik terus!',
+		`hunian premium kawasan ${area}, keamanan 24 jam, bebas banjir!`,
+		'lokasi strategis, ROI tinggi — buruan sebelum kehabisan unit!',
+		`primadona ${area}, dekat sekolah & rumah sakit, nilai aset melambung!`
+	];
+	return `Kunjungi ${tile.name} — ${taglines[(tile.i ?? 0) % taglines.length]}`;
+}
+
 /** nilai saham yang dipegang pemain pada harga pasar sekarang */
 export function stockValue(state, p) {
 	let total = 0;

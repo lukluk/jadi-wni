@@ -10,7 +10,8 @@
 		buildCost,
 		STATION_RENT,
 		UTILITY_MULT,
-		formatRp
+		formatRp,
+		adCost
 	} from '$lib/shared/board.js';
 
 	/** @type {{ game:any, images?:Record<string, any>, index:number, meId:string, onAction:(a:any)=>void, onClose:()=>void }} */
@@ -25,12 +26,26 @@
 	const redeem = $derived(t.price ? Math.ceil((t.price / 2) * 1.1) : 0);
 
 	const listing = $derived(game.market?.[index]);
+	const listedPrice = $derived(listing?.price ?? null);
 	const offerCount = $derived(Object.keys(listing?.offers ?? {}).length);
-	const canList = $derived(
-		mine &&
-			!own.mortgaged &&
+	const ownable = $derived(['property', 'station', 'utility'].includes(t.type));
+	// aset bisa dijual/ditawar: tak digadai & tak ada rumah di grup (untuk properti)
+	const assetSellable = $derived(
+		ownable &&
+			!own?.mortgaged &&
 			(t.type !== 'property' || !TILES.some((x) => x.group === t.group && (game.tiles[x.i]?.level ?? 0) > 0))
 	);
+	const canList = $derived(mine && assetSellable);
+
+	// penawaran: pemain lain bisa menawar aset ini walau belum dijual
+	const me = $derived(game.players.find((p) => p.id === meId && !p.bankrupt));
+	const isOther = $derived(!!owner && owner.id !== meId && game.status === 'playing');
+	const canOffer = $derived(isOther && !!me && assetSellable);
+	const myOffer = $derived(listing?.offers?.[meId] ?? null);
+	let offerDraft = $state(/** @type {string|null} */ (null));
+	const offerPrice = $derived(offerDraft ?? String(myOffer ?? listedPrice ?? t.price ?? ''));
+	const offerValid = $derived(Number.isFinite(Math.round(Number(offerPrice))) && Math.round(Number(offerPrice)) >= 1);
+
 	let priceDraft = $state(/** @type {string|null} */ (null));
 	const askPrice = $derived(priceDraft ?? String(listing?.price ?? t.price ?? ''));
 	const askValid = $derived(Number.isFinite(Math.round(Number(askPrice))) && Math.round(Number(askPrice)) >= 1);
@@ -107,12 +122,14 @@
 				<p class="owner">Belum ada pemilik.</p>
 			{/if}
 
-			{#if listing}
+			{#if listing && listedPrice != null}
 				<p class="listed">
-					🏷️ Dijual di Pasar: <strong>{formatRp(listing.price)}</strong>
+					🏷️ Dijual di Pasar: <strong>{formatRp(listedPrice)}</strong>
 					{#if mine}{offerCount ? `· ${offerCount} tawaran, cek tab Pasar` : '· belum ada tawaran'}
 					{:else}· beli atau nego di tab Pasar{/if}
 				</p>
+			{:else if listing && offerCount}
+				<p class="listed">💬 Ada {offerCount} tawaran berjalan{mine ? ' — terima/tolak di tab Pasar' : ''}.</p>
 			{/if}
 
 			{#if canList}
@@ -144,6 +161,44 @@
 				</div>
 			{/if}
 
+			{#if canOffer}
+				{#if myOffer != null}
+					<p class="listed">
+						💬 Tawaranmu: <strong>{formatRp(myOffer)}</strong> — menunggu {owner.name}.
+						<button type="button" class="link" onclick={() => onAction({ type: 'mkCancelOffer', tile: index })}>batalkan</button>
+					</p>
+				{/if}
+				<form
+					class="sellform"
+					onsubmit={(e) => {
+						e.preventDefault();
+						onAction({ type: 'mkOffer', tile: index, price: Math.round(Number(offerPrice)) });
+					}}
+				>
+					<label>
+						<span>{myOffer != null ? 'Ubah tawaran (jt)' : `Tawar ke ${owner.name} (jt)`}</span>
+						<input
+							type="number"
+							min="1"
+							inputmode="numeric"
+							value={offerPrice}
+							oninput={(e) => (offerDraft = e.currentTarget.value)}
+						/>
+					</label>
+					<button class="btn yellow small" disabled={!offerValid}>{myOffer != null ? 'Perbarui tawaran' : 'Kirim tawaran'}</button>
+					{#if listing && listedPrice != null}
+						<button type="button" class="btn primary small" disabled={!me || me.money < listedPrice} onclick={() => onAction({ type: 'mkBuy', tile: index })}>
+							Beli {formatRp(listedPrice)}
+						</button>
+					{/if}
+				</form>
+				<p class="meta">Tawaran langsung ke {owner.name} — dia terima/tolak di tab Pasar. Tak perlu menunggu petak dijual.</p>
+			{:else if isOther && !assetSellable}
+				<p class="meta">
+					{#if own?.mortgaged}Aset ini sedang digadai, belum bisa ditawar.{:else}Pemiliknya harus jual rumah di grup ini dulu sebelum bisa ditawar.{/if}
+				</p>
+			{/if}
+
 			{#if mine}
 				<div class="actions">
 					{#if t.type === 'property' && !own.mortgaged && own.level < maxLevelOf(t)}
@@ -166,6 +221,11 @@
 							Tebus ({formatRp(redeem)})
 						</button>
 					{/if}
+					{#if t.type === 'property'}
+						<button class="btn small ad-btn" title="Semua pemain lain ketahan ~20 detik nonton iklan ini" onclick={() => onAction({ type: 'iklan', tile: index })}>
+							📺 Pasang Iklan ({formatRp(adCost(t))})
+						</button>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -181,6 +241,12 @@
 		border: 2px solid var(--ink);
 		border-radius: 8px;
 		font-size: 0.85rem;
+	}
+	.link {
+		all: unset;
+		cursor: pointer;
+		text-decoration: underline;
+		color: var(--merah);
 	}
 	.sellform {
 		display: flex;
@@ -310,6 +376,10 @@
 		display: flex;
 		flex-wrap: wrap;
 		gap: 0.5rem;
+	}
+	.ad-btn {
+		background: var(--ink);
+		color: #fff;
 	}
 	.close {
 		position: absolute;

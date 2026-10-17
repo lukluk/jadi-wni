@@ -29,7 +29,11 @@ import {
 	netWorth,
 	surrenderPlan,
 	candlesOf,
-	WIN_NETWORTH
+	WIN_NETWORTH,
+	adCost,
+	adCopy,
+	AD_SECONDS,
+	AD_SKIP_COST
 } from '../../src/lib/shared/board.js';
 
 export { stockValue, netWorth };
@@ -69,6 +73,8 @@ export function createGame(code, host, opts = {}) {
 		knockout: !!opts.knockout,
 		koNextAt: null,
 		koWarnUntil: null,
+		paused: false,
+		pausedAt: null,
 		players: [],
 		tiles: {},
 		market: {},
@@ -81,6 +87,7 @@ export function createGame(code, host, opts = {}) {
 		extraRoll: false,
 		pendingBuy: null,
 		pendingRent: null,
+		ad: null,
 		kasNegara: 0,
 		decks: { musibah: [], takdir: [] },
 		lastCard: null,
@@ -525,6 +532,50 @@ export function expireKick(state, now = Date.now()) {
 	}
 	kickTally(state);
 	return state.kickVote !== k;
+}
+
+// ---------- iklan properti (Pasang Iklan) ----------
+
+const AD_MS = AD_SECONDS * 1000;
+
+/** Pasang iklan untuk properti milik sendiri: pemain lain terganggu ~20 detik. Biaya 25% harga -> Kas Negara. */
+function placeAd(state, userId, tileIdx) {
+	const p = requireActive(state, userId);
+	if (state.ad) fail('Sudah ada iklan yang sedang tayang.');
+	if (p.adTurn === state.turnCount) fail('Kamu sudah pasang iklan giliran ini.');
+	const own = state.tiles[tileIdx];
+	const tile = TILES[tileIdx];
+	if (!tile || tile.type !== 'property') fail('Hanya properti yang bisa diiklankan.');
+	if (!own || own.owner !== userId) fail('Kamu hanya bisa mengiklankan propertimu sendiri.');
+	const cost = adCost(tile);
+	if (p.money < cost) fail(`Uang kurang, biaya iklan ${formatRp(cost)}.`);
+	pay(state, p, cost); // -> Kas Negara
+	p.adTurn = state.turnCount;
+	state.seq += 1;
+	state.ad = { by: userId, byName: p.name, tile: tileIdx, name: tile.name, text: adCopy(tile), cost, deadline: Date.now() + AD_MS, skipped: [] };
+	log(state, `📺 ${p.name} pasang iklan ${tile.name} (${formatRp(cost)} ke Kas Negara). Pemain lain ketahan ${AD_SECONDS} detik!`);
+}
+
+/** Bayar Rp 25 jt (-> Kas Negara) untuk lepas dari iklan lebih cepat. */
+function skipAd(state, userId) {
+	const p = requireActive(state, userId);
+	if (!state.ad) fail('Tidak ada iklan yang tayang.');
+	if (userId === state.ad.by || state.ad.skipped.includes(userId)) return;
+	if (p.money < AD_SKIP_COST) fail(`Uang kurang untuk skip iklan (${formatRp(AD_SKIP_COST)}).`);
+	pay(state, p, AD_SKIP_COST); // -> Kas Negara
+	state.ad.skipped.push(userId);
+	state.seq += 1;
+	log(state, `📺 ${p.name} bayar ${formatRp(AD_SKIP_COST)} untuk skip iklan.`);
+}
+
+/** dipanggil server tiap detik: iklan habis waktu -> hilang. true kalau state berubah. */
+export function expireAd(state, now = Date.now()) {
+	if (!state.ad) return false;
+	if (now >= state.ad.deadline) {
+		state.ad = null;
+		return true;
+	}
+	return false;
 }
 
 /** yang berhak atas sewa yang sedang menunggu dibayar (null kalau sewa batal) */
@@ -988,17 +1039,53 @@ function completeSale(state, tileIdx, buyer, price, how) {
 function marketBuy(state, userId, tileIdx) {
 	const buyer = requireActive(state, userId);
 	const { l } = requireListing(state, tileIdx);
+	if (l.price == null) fail('Aset ini belum dipasang harga jual — kirim tawaran saja.');
 	completeSale(state, tileIdx, buyer, l.price, 'beli');
 }
 
-function marketOffer(state, userId, tileIdx, price) {
+/** Pastikan aset bisa ditawar walau belum dijual: kembalikan pemiliknya (penjual). */
+function offerTarget(state, userId, tileIdx) {
 	const buyer = requireActive(state, userId);
-	const { l } = requireListing(state, tileIdx);
-	if (l.seller === buyer.id) fail('Tidak bisa menawar asetmu sendiri.');
+	if (tileIdx === 'card' || isCardKey(tileIdx)) fail('Kartu Pemutihan hanya bisa ditawar kalau dipasang di Pasar.');
+	const tile = TILES[tileIdx];
+	const own = state.tiles[tileIdx];
+	if (!tile || !isOwnable(tile) || !own) fail('Aset ini belum dimiliki siapa pun.');
+	const seller = playerById(state, own.owner);
+	if (!seller || seller.bankrupt) fail('Pemiliknya sudah tidak aktif.');
+	if (seller.id === buyer.id) fail('Tidak bisa menawar asetmu sendiri.');
+	sellable(state, tile, own); // tidak digadai & tak ada rumah di grup
+	return { buyer, seller };
+}
+
+function marketOffer(state, userId, tileIdx, price) {
 	const amount = parsePrice(price);
+	let l = market(state)[tileIdx];
+	let buyer;
+	if (l) {
+		// sudah ada listing/kontainer tawaran: validasi penjual masih pemilik
+		buyer = requireActive(state, userId);
+		({ l } = requireListing(state, tileIdx));
+		if (l.seller === buyer.id) fail('Tidak bisa menawar asetmu sendiri.');
+	} else {
+		// belum dijual: buat kontainer tawaran langsung ke pemilik (price null = belum dipasang harga)
+		const t = offerTarget(state, userId, tileIdx);
+		buyer = t.buyer;
+		l = market(state)[tileIdx] = { seller: t.seller.id, price: null, offers: {} };
+	}
 	l.offers[buyer.id] = amount;
 	mkEvent(state, 'offer', tileIdx, buyer.id, l.seller, amount);
-	log(state, `💬 ${buyer.name} menawar ${listingName(tileIdx)} ${formatRp(amount)} (harga jual ${formatRp(l.price)}).`);
+	log(
+		state,
+		l.price == null
+			? `💬 ${buyer.name} menawar ${listingName(tileIdx)} ${formatRp(amount)} (belum dijual).`
+			: `💬 ${buyer.name} menawar ${listingName(tileIdx)} ${formatRp(amount)} (harga jual ${formatRp(l.price)}).`
+	);
+}
+
+/** hapus kontainer tawaran tanpa harga jual kalau tak ada tawaran tersisa */
+function pruneOfferContainer(state, tileIdx) {
+	const l = market(state)[tileIdx];
+	if (l && l.price == null && Object.keys(l.offers ?? {}).length === 0) dropListing(state, tileIdx);
 }
 
 function marketCancelOffer(state, userId, tileIdx) {
@@ -1006,6 +1093,7 @@ function marketCancelOffer(state, userId, tileIdx) {
 	const l = market(state)[tileIdx];
 	if (!l || !(userId in l.offers)) fail('Tidak ada tawaranmu.');
 	delete l.offers[userId];
+	pruneOfferContainer(state, tileIdx);
 }
 
 function requireSeller(state, userId, key) {
@@ -1035,6 +1123,7 @@ function marketReject(state, userId, tileIdx, buyerId) {
 	delete l.offers[buyerId];
 	mkEvent(state, 'reject', tileIdx, userId, buyerId, 0);
 	log(state, `${playerById(state, userId).name} tolak tawaran ${buyer?.name ?? 'pemain'} untuk ${listingName(tileIdx)}.`);
+	pruneOfferContainer(state, tileIdx);
 }
 
 function cleanMarketFor(state, playerId) {
@@ -1061,6 +1150,19 @@ export function applyAction(state, userId, action, rng = Math.random) {
 }
 
 function dispatch(state, userId, action, rng) {
+	// saat dijeda host, hanya host yang boleh melanjutkan/mengakhiri; aksi lain diblok
+	if (state.paused && action?.type !== 'pause' && action?.type !== 'endGame')
+		fail('⏸️ Game sedang dijeda host.');
+	// iklan tayang: pemain lain tidak bisa beraksi sampai hitung mundur habis atau bayar skip
+	if (
+		state.ad &&
+		userId !== state.ad.by &&
+		!state.ad.skipped.includes(userId) &&
+		action?.type !== 'iklanSkip' &&
+		action?.type !== 'pause' &&
+		action?.type !== 'endGame'
+	)
+		fail('📺 Lagi ada iklan tayang. Tunggu sampai habis atau skip iklannya.');
 	switch (action?.type) {
 		case 'roll':
 			return doRoll(state, requireTurn(state, userId), rng);
@@ -1166,6 +1268,11 @@ function dispatch(state, userId, action, rng) {
 		case 'judol':
 			return judol(state, userId, action.amount, rng);
 
+		case 'iklan':
+			return placeAd(state, userId, action.tile);
+		case 'iklanSkip':
+			return skipAd(state, userId);
+
 		case 'mkList':
 			return listAsset(state, userId, action.tile, action.price);
 		case 'mkUnlist':
@@ -1186,6 +1293,22 @@ function dispatch(state, userId, action, rng) {
 			const p = playerById(state, userId);
 			if (!p || p.bankrupt) fail('Kamu bukan pemain aktif.');
 			return surrender(state, p);
+		}
+
+		case 'pause': {
+			if (state.hostId !== userId) fail('Hanya host yang bisa menjeda game.');
+			if (state.status !== 'playing') fail('Game belum berjalan.');
+			const on = action.on ?? !state.paused;
+			if (!!on === !!state.paused) return; // tidak ada perubahan
+			if (on) {
+				state.paused = true;
+				state.pausedAt = Date.now();
+				log(state, '⏸️ Host menjeda permainan. Semua aksi dihentikan sementara.');
+			} else {
+				resumeFromPause(state);
+				log(state, '▶️ Host melanjutkan permainan.');
+			}
+			return;
 		}
 
 		case 'autoPlay': {
@@ -1215,9 +1338,24 @@ function dispatch(state, userId, action, rng) {
 	}
 }
 
+/** Lanjut dari jeda: geser semua batas waktu maju sepanjang durasi jeda, lalu bersihkan flag. */
+function resumeFromPause(state) {
+	const delta = Date.now() - (state.pausedAt ?? Date.now());
+	const shift = (v) => (typeof v === 'number' ? v + delta : v);
+	if (state.pendingRent?.deadline) state.pendingRent.deadline = shift(state.pendingRent.deadline);
+	if (state.kickVote?.deadline) state.kickVote.deadline = shift(state.kickVote.deadline);
+	if (state.kickCoolUntil) state.kickCoolUntil = shift(state.kickCoolUntil);
+	if (state.koNextAt) state.koNextAt = shift(state.koNextAt);
+	if (state.koWarnUntil) state.koWarnUntil = shift(state.koWarnUntil);
+	if (state.ad?.deadline) state.ad.deadline = shift(state.ad.deadline);
+	state.paused = false;
+	state.pausedAt = null;
+}
+
 /** Paksa lewati giliran pemain yang terputus. */
 export function forceSkip(state, byUserId) {
 	if (state.status !== 'playing') fail('Game belum berjalan.');
+	if (state.paused) fail('⏸️ Game sedang dijeda host.');
 	const p = current(state);
 	const by = playerById(state, byUserId);
 	if (!by) fail('Hanya pemain yang bisa melewati giliran.');
