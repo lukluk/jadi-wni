@@ -34,6 +34,11 @@
 	/** @type {{sid:string, userId:string, stream:MediaStream, hasVideo:boolean}[]} */
 	let peers = $state([]);
 
+	// undangan voice: muncul saat pemain lain mulai voice chat & aku belum ikut
+	let invite = $state(/** @type {{id:string, name:string}|null} */ (null));
+	const inviteDismissed = new Set();
+	let seenMembers = new Set();
+
 	/** @type {Map<string, RTCPeerConnection>} */
 	const pcs = new Map();
 	/** negosiasi "perfect negotiation": making = sedang membuat offer, ignore = abaikan offer tabrakan */
@@ -61,6 +66,33 @@
 	$effect(() => {
 		if (joined) sock().emit('voice:state', { muted: muted || noMic, cam: camOn });
 	});
+	// undangan: kalau pemain lain mulai voice chat & aku belum gabung, tawari untuk gabung
+	$effect(() => {
+		const cur = members ?? [];
+		if (joined || busy || !canVoice) {
+			invite = null;
+			seenMembers = new Set(cur);
+			return;
+		}
+		if (invite && !cur.includes(invite.id)) invite = null; // pengundang keburu keluar
+		if (!invite) {
+			for (const id of cur) {
+				if (id === meId || seenMembers.has(id) || inviteDismissed.has(id)) continue;
+				invite = { id, name: players.find((p) => p.id === id)?.name ?? 'Seseorang' };
+				play('notif');
+				break;
+			}
+		}
+		seenMembers = new Set(cur);
+	});
+	function acceptInvite() {
+		invite = null;
+		if (!joined) join();
+	}
+	function dismissInvite() {
+		if (invite) inviteDismissed.add(invite.id);
+		invite = null;
+	}
 
 	/** kontrol dari kartu pemain: diri sendiri langsung, pemain lain lewat host */
 	export function control(userId, kind) {
@@ -335,6 +367,16 @@
 	<button class="verr toast" onclick={() => (error = '')}>{error}</button>
 {/if}
 
+{#if invite && !joined}
+	<div class="vinvite" role="alertdialog" aria-live="polite">
+		<span class="vinvite-txt">🎙️ <strong>{invite.name}</strong> mengajak voice chat</span>
+		<div class="vinvite-acts">
+			<button class="btn small primary" disabled={busy} onclick={acceptInvite}>Gabung</button>
+			<button class="btn small" onclick={dismissInvite}>Abaikan</button>
+		</div>
+	</div>
+{/if}
+
 <!-- elemen pemutar audio peer (disembunyikan); video tampil di avatar PlayerCard -->
 <div class="faces">
 	{#each peers as p (p.sid)}
@@ -440,5 +482,38 @@
 	}
 	.faces {
 		display: none;
+	}
+	.vinvite {
+		position: fixed;
+		bottom: 3rem;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 82;
+		display: flex;
+		align-items: center;
+		gap: 0.8rem;
+		flex-wrap: wrap;
+		justify-content: center;
+		max-width: calc(100vw - 2rem);
+		padding: 0.5rem 0.9rem;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 16px;
+		box-shadow: 4px 4px 0 var(--ink);
+		animation: vinvite-in 0.25s ease both;
+	}
+	@keyframes vinvite-in {
+		from {
+			opacity: 0;
+			transform: translate(-50%, 8px);
+		}
+	}
+	.vinvite-txt {
+		font-size: 0.9rem;
+		font-weight: 600;
+	}
+	.vinvite-acts {
+		display: flex;
+		gap: 0.4rem;
 	}
 </style>
