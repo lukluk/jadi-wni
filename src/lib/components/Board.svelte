@@ -101,8 +101,9 @@
 		for (const p of live) (byPos[at(p)] ??= []).push(p.id);
 		return live.map((p) => ({ p, at: at(p), k: byPos[at(p)].indexOf(p.id), n: byPos[at(p)].length }));
 	});
-	// penanda pemilik: satu avatar mini per (pemilik, grup, sisi papan) di area dalam (sisi dalam deretan petak),
-	// dihubungkan garis melengkung ke tiap asetnya. Kalau bertumpuk dengan avatar lain, geser lebih ke tengah.
+	// penanda pemilik: satu avatar mini per (pemilik, grup) di area dalam, dihubungkan garis melengkung ke
+	// tiap asetnya — termasuk grup yang menyeberang pojok (petak di dua sisi papan tetap satu penanda).
+	// Kalau bertumpuk dengan avatar lain pada sisi yang sama, geser lebih ke tengah.
 	const MK = { size: 1.95, gap: 2.4, inner: 1.6, step: 2.4 };
 	const pctY = (v) => (v / L.H) * 100;
 	const edge = (i) => {
@@ -137,23 +138,46 @@
 			if (!owner || owner.bankrupt) continue;
 			const t = TILES[+k];
 			const e = edge(+k);
-			const key = `${owner.id}|${t.group ?? t.type}|${e.side}`;
-			const g = groups.get(key) ?? { owner, side: e.side, tiles: [] };
+			// satu grup warna milik pemain yang sama = satu penanda, walau petaknya menyeberang pojok (beda sisi)
+			const key = `${owner.id}|${t.group ?? t.type}`;
+			const g = groups.get(key) ?? { owner, key, tiles: [] };
 			g.tiles.push({ i: +k, ...e, mortgaged: !!own.mortgaged });
 			groups.set(key, g);
 		}
-		const all = [...groups.values()].map((g) => ({ ...g, m: g.tiles.reduce((n, t) => n + t.m, 0) / g.tiles.length }));
+		const all = [...groups.values()].map((g) => {
+			const sides = new Set(g.tiles.map((t) => t.side));
+			return {
+				...g,
+				single: sides.size === 1 ? g.tiles[0].side : null, // null = menyeberang pojok
+				m: g.tiles.reduce((n, t) => n + t.m, 0) / g.tiles.length
+			};
+		});
+		// susun jalur anti-tumpuk hanya untuk grup yang semua petaknya di satu sisi
 		for (const side of ['b', 'l', 't', 'r']) {
 			const lastOf = [];
-			for (const g of all.filter((g) => g.side === side).sort((a, b) => a.m - b.m)) {
+			for (const g of all.filter((g) => g.single === side).sort((a, b) => a.m - b.m)) {
 				let lane = 0;
 				while (lastOf[lane] !== undefined && g.m - lastOf[lane] < MK.gap) lane++;
 				lastOf[lane] = g.m;
 				g.lane = lane;
 			}
 		}
+		const cX = 50;
+		const cY = L.H / 2;
 		return all.map((g) => {
-			const at = slot(g.side, g.m, g.lane);
+			let at;
+			if (g.single) {
+				at = slot(g.single, g.m, g.lane ?? 0);
+			} else {
+				// grup menyeberang pojok: avatar di titik-tengah aset, digeser ke arah pusat papan
+				const bx = g.tiles.reduce((n, t) => n + t.inner[0], 0) / g.tiles.length;
+				const by = g.tiles.reduce((n, t) => n + t.inner[1], 0) / g.tiles.length;
+				const dx = cX - bx;
+				const dy = cY - by;
+				const len = Math.hypot(dx, dy) || 1;
+				const push = MK.inner + MK.step;
+				at = [bx + (dx / len) * push, by + (dy / len) * push];
+			}
 			return {
 				...g,
 				x: at[0],
@@ -251,7 +275,7 @@
 
 	<!-- penanda pemilik: avatar mini + garis melengkung ke tiap aset -->
 	<svg class="mlines" viewBox="0 0 100 {L.H}" aria-hidden="true">
-		{#each markers as g (g.owner.id + g.side + g.tiles[0].i)}
+		{#each markers as g (g.key)}
 			{#each g.paths as t (t.i)}
 				<path d={t.d} class="under" vector-effect="non-scaling-stroke" />
 				<path d={t.d} style:stroke={g.owner.color} stroke-dasharray={t.mortgaged ? '3 2' : null} vector-effect="non-scaling-stroke" />
@@ -259,7 +283,7 @@
 			{/each}
 		{/each}
 	</svg>
-	{#each markers as g (g.owner.id + g.side + g.tiles[0].i)}
+	{#each markers as g (g.key)}
 		<span class="mava" style:left="{g.x}%" style:top="{pctY(g.y)}%" style:--c={g.owner.color} title={`Milik ${g.owner.name}${g.tiles.length > 1 ? ` (${g.tiles.length} aset)` : ''}`}>
 			<Avatar p={g.owner} />
 		</span>
