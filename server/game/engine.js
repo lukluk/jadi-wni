@@ -906,8 +906,10 @@ function judol(state, userId, amount, rng) {
 	const pct = Math.round((rng() * 2 - 1) * 100);
 	const delta = Math.round((bet * pct) / 100);
 	p.money += delta;
+	// catat kekalahan judod beruntun (menang/impas = reset) untuk efek layar pemain
+	p.judolLoseStreak = delta < 0 ? (p.judolLoseStreak ?? 0) + 1 : 0;
 	state.seq += 1;
-	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, reels: judolReels(pct, rng) };
+	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, streak: p.judolLoseStreak, reels: judolReels(pct, rng) };
 	log(
 		state,
 		`🎰 ${p.name} main judod ${formatRp(bet)}: ${delta >= 0 ? 'menang' : 'kalah'} ${formatRp(Math.abs(delta))} (${pct > 0 ? '+' : ''}${pct}%).`

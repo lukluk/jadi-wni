@@ -112,6 +112,8 @@
 					cur.done = true;
 				}
 				play(j.delta > 0 ? 'good' : j.delta < 0 ? 'bad' : 'notif');
+				// kalah judod beruntun (3x+): vignette merah di layar pemain itu sendiri, makin merah makin sering kalah
+				if (j.playerId === me?.id && j.delta < 0 && (j.streak ?? 0) >= 3) flashLose(j.streak);
 			}, 2300),
 			setTimeout(() => {
 				delete juds[pid];
@@ -121,6 +123,15 @@
 	}
 	/** true selama animasi judod pemain ini belum selesai (menahan saldo kartunya) */
 	const judHold = (pid) => !!juds[pid] && !juds[pid].done;
+
+	// efek layar: kalah judod beruntun -> vignette merah yang cepat memudar (~2 dtk)
+	let loseFx = $state(/** @type {{ streak:number, n:number }|null} */ (null));
+	let loseFxTimer;
+	function flashLose(streak) {
+		loseFx = { streak, n: (loseFx?.n ?? 0) + 1 };
+		clearTimeout(loseFxTimer);
+		loseFxTimer = setTimeout(() => (loseFx = null), 2000);
+	}
 	let freshTimer;
 	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh);
 
@@ -1065,6 +1076,12 @@
 			{/if}
 		</div>
 	</div>
+{/if}
+
+{#if loseFx}
+	{#key loseFx.n}
+		<div class="lose-vignette" style:--i={Math.min(1, (loseFx.streak - 2) * 0.28)} aria-hidden="true"></div>
+	{/key}
 {/if}
 
 {#if toast}<div class="toast" role="status">{toast}</div>{/if}
@@ -2135,6 +2152,28 @@
 	@keyframes pausepulse {
 		0%, 100% { transform: scale(1); opacity: 0.9; }
 		50% { transform: scale(1.12); opacity: 1; }
+	}
+
+	/* vignette merah saat kalah judod beruntun; --i (0..1) = intensitas, makin sering kalah makin merah */
+	.lose-vignette {
+		position: fixed;
+		inset: 0;
+		z-index: 95;
+		pointer-events: none;
+		background: radial-gradient(
+			ellipse at center,
+			transparent calc(42% - var(--i, 0.3) * 22%),
+			rgba(190, 0, 20, calc(0.35 + var(--i, 0.3) * 0.5)) 100%
+		);
+		animation: lose-vig 2s ease-out forwards;
+	}
+	@keyframes lose-vig {
+		0% { opacity: 0; }
+		10% { opacity: 1; }
+		100% { opacity: 0; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.lose-vignette { animation-duration: 2s; }
 	}
 
 	/* desktop: kolom kanan pas setinggi layar; scrollbar hanya di dalam isi tiap tab */
