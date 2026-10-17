@@ -779,7 +779,6 @@
 								{#if myTurn}Selesaikan tagihanmu, sisa waktu <strong>{rentWait}</strong>{:else}Tunggu, {cur?.name} sedang menyelesaikan tagihan <strong>{rentWait}</strong>{/if}
 							</p>
 						{/if}
-						<p class="hint">Klik petak untuk lihat detail, bangun rumah, atau gadai.{#if spaceAct} · <kbd class="kbd">Spasi</kbd> untuk aksi utama.{/if}</p>
 					</div>
 				{/snippet}
 			</Board>
@@ -1408,11 +1407,6 @@
 		font-size: 0.9rem;
 		max-width: 40ch;
 	}
-	.hint {
-		margin: 0;
-		font-size: 0.75rem;
-		color: var(--ink-soft);
-	}
 	.kbd {
 		display: inline-block;
 		margin-left: 0.4rem;
@@ -1427,10 +1421,6 @@
 		border-radius: 5px;
 		box-shadow: 0 2px 0 var(--ink);
 		vertical-align: middle;
-	}
-	.hint .kbd {
-		margin-left: 0;
-		box-shadow: 0 1px 0 var(--ink);
 	}
 	.ended h2 {
 		margin: 0;
