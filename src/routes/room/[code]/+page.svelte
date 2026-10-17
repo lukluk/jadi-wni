@@ -295,6 +295,27 @@
 
 	const showRent = $derived(!!rentInfo && myTurn && !rolling && !moving);
 
+	// aksi utama yang dipicu tombol Spasi (null = tidak ada aksi sekarang). Syaratnya menyamai tombol di layar.
+	const spaceAct = $derived.by(() => {
+		if (!game || game.status !== 'playing' || !myTurn || !myPlayer || busy || rolling || moving) return null;
+		if (showRent && rentInfo && rentInfo.short <= 0) return { type: 'payRent' };
+		if (game.phase === 'roll' && myPlayer.money >= 0) return { type: 'roll' };
+		if (game.phase === 'buy' && pendingTile && myPlayer.money >= pendingTile.price) return { type: 'buy' };
+		if (game.phase === 'end' && myPlayer.money >= 0) return { type: 'endTurn' };
+		return null;
+	});
+	function onHotkey(e) {
+		if (e.code !== 'Space' && e.key !== ' ') return;
+		if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+		const el = /** @type {HTMLElement|null} */ (document.activeElement);
+		const tag = el?.tagName;
+		if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el?.isContentEditable) return;
+		const a = spaceAct;
+		if (!a) return;
+		e.preventDefault(); // cegah scroll & klik ganda pada tombol yang kebetulan fokus
+		act(a);
+	}
+
 	// batas waktu tagihan (jam server dipakai supaya semua pemain melihat hitungan yang sama)
 	const RENT_SECONDS = 120;
 	let clockOffset = 0;
@@ -399,8 +420,10 @@
 		s.on('connect', onConnect);
 		s.on('disconnect', onDisconnect);
 		s.on('connect_error', onConnectError);
+		window.addEventListener('keydown', onHotkey);
 		if (s.connected) join();
 		return () => {
+			window.removeEventListener('keydown', onHotkey);
 			clearInterval(faceTimer);
 			clearTimeout(rollTimer);
 			s.off('room:state', onState);
@@ -720,10 +743,12 @@
 									{/if}
 									<button class="btn primary big" disabled={busy || myPlayer.money < 0} onclick={() => act({ type: 'roll' })}>
 										{myPlayer.inJail ? 'Coba dadu dobel' : game.extraRoll ? 'Lempar lagi (dobel!)' : 'Lempar dadu'}
+										{#if spaceAct?.type === 'roll'}<kbd class="kbd">Spasi</kbd>{/if}
 									</button>
 								{:else if game.phase === 'buy' && pendingTile && !rolling && !moving}
 									<button class="btn primary" disabled={busy || myPlayer.money < pendingTile.price} onclick={() => act({ type: 'buy' })}>
 										Beli {pendingTile.name} ({formatRp(pendingTile.price)})
+										{#if spaceAct?.type === 'buy'}<kbd class="kbd">Spasi</kbd>{/if}
 									</button>
 									<button class="btn" disabled={busy} onclick={() => act({ type: 'skip' })}>Lewati</button>
 								{:else if game.phase === 'end'}
@@ -732,6 +757,7 @@
 									{/if}
 									<button class="btn small" disabled={busy || myPlayer.money < 0} onclick={() => act({ type: 'endTurn' })}>
 										{countdown ? 'Lanjut sekarang' : 'Selesai giliran'}
+										{#if spaceAct?.type === 'endTurn'}<kbd class="kbd">Spasi</kbd>{/if}
 									</button>
 								{/if}
 								{#if myPlayer.money < 0}
@@ -753,7 +779,7 @@
 								{#if myTurn}Selesaikan tagihanmu, sisa waktu <strong>{rentWait}</strong>{:else}Tunggu, {cur?.name} sedang menyelesaikan tagihan <strong>{rentWait}</strong>{/if}
 							</p>
 						{/if}
-						<p class="hint">Klik petak untuk lihat detail, bangun rumah, atau gadai.</p>
+						<p class="hint">Klik petak untuk lihat detail, bangun rumah, atau gadai.{#if spaceAct} · <kbd class="kbd">Spasi</kbd> untuk aksi utama.{/if}</p>
 					</div>
 				{/snippet}
 			</Board>
@@ -928,7 +954,7 @@
 				<p class="rent-short">Uangmu kurang {formatRp(ri.short)}. Jual rumah, gadai/jual aset (klik petakmu), atau jual saham di Portofolio. Kalau menyerah, semua asetmu jadi milik {ri.owner.name}.</p>
 			{/if}
 			<div class="rent-acts">
-				<button class="btn primary big" disabled={busy || ri.short > 0} onclick={() => act({ type: 'payRent' })}>Bayar {formatRp(ri.r.amount)}</button>
+				<button class="btn primary big" disabled={busy || ri.short > 0} onclick={() => act({ type: 'payRent' })}>Bayar {formatRp(ri.r.amount)}{#if spaceAct?.type === 'payRent'}<kbd class="kbd">Spasi</kbd>{/if}</button>
 				{#if ri.short > 0}
 					<button class="btn small" onclick={surrender}>Menyerah</button>
 				{/if}
@@ -1386,6 +1412,25 @@
 		margin: 0;
 		font-size: 0.75rem;
 		color: var(--ink-soft);
+	}
+	.kbd {
+		display: inline-block;
+		margin-left: 0.4rem;
+		padding: 0.05rem 0.4rem;
+		font-family: 'JetBrains Mono', monospace;
+		font-size: 0.72em;
+		font-weight: 700;
+		line-height: 1.5;
+		color: var(--ink);
+		background: #fff;
+		border: 1.5px solid var(--ink);
+		border-radius: 5px;
+		box-shadow: 0 2px 0 var(--ink);
+		vertical-align: middle;
+	}
+	.hint .kbd {
+		margin-left: 0;
+		box-shadow: 0 1px 0 var(--ink);
 	}
 	.ended h2 {
 		margin: 0;
