@@ -48,6 +48,7 @@
 			<div class="ktp-body">
 				<span class="nik">NIK 3201 0000 0000 0001</span>
 				<h1>Jadi <em>WNI</em></h1>
+				<p class="wni-kepanjangan">(Warga Negara Iyuup)</p>
 				<dl>
 					<dt>Pekerjaan</dt>
 					<dd>Lempar dadu, bayar cicilan</dd>
@@ -223,6 +224,15 @@
 		font-style: normal;
 		color: var(--merah);
 		text-shadow: 3px 3px 0 var(--ink);
+	}
+	.wni-kepanjangan {
+		grid-column: 1 / -1;
+		margin: -0.2rem 0 0.6rem;
+		font-size: 0.8rem;
+		font-weight: 700;
+		font-style: italic;
+		color: var(--ink-soft);
+		letter-spacing: 0.01em;
 	}
 	dl {
 		margin: 0;
