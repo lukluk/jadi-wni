@@ -553,7 +553,8 @@
 		position: absolute;
 		top: 2.5%;
 		right: 2.5%;
-		z-index: 4;
+		/* di bawah rumah (1), garis kepemilikan (3) & avatar mini (4) — note cuma di latar kotak biru */
+		z-index: 0;
 		width: clamp(96px, 23cqi, 190px);
 		padding: clamp(0.3rem, 1.4cqi, 0.6rem) clamp(0.35rem, 1.5cqi, 0.65rem);
 		background: linear-gradient(180deg, #fff7a8, #ffee82);
