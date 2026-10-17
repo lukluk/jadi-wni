@@ -2,12 +2,19 @@
 	import { onMount } from 'svelte';
 	import { getSocket } from '$lib/socket.js';
 
-	/** @type {{ feed: {posts:{handle:string,text:string,kind:string}[], at:number, nextAt:number}|null }} */
+	/** @type {{ news?: {id:number,sym:string,text:string}[] }} */
+	let { news = [] } = $props();
+
+	/** @type {{ posts:{handle:string,text:string,kind:string}[], at:number, nextAt:number}|null } */
 	let feed = $state(null);
 	let paused = $state(false);
 	let now = $state(Date.now());
 
-	const posts = $derived(feed?.posts ?? []);
+	// berita saham tampil sebagai item "berita" kuning, digabung dengan cuitan netizen
+	const newsPosts = $derived(
+		(news ?? []).slice().reverse().map((n) => ({ handle: `📉 ${n.sym}`, text: n.text, kind: 'berita' }))
+	);
+	const posts = $derived([...newsPosts, ...(feed?.posts ?? [])]);
 	const ago = $derived(feed?.at ? Math.max(0, Math.round((now - feed.at) / 60_000)) : 0);
 	// kecepatan tetap ~13 karakter/detik, minimal 30 dtk per putaran
 	const duration = $derived(Math.max(30, posts.reduce((n, p) => n + p.handle.length + p.text.length + 6, 0) / 13));
@@ -25,9 +32,9 @@
 	});
 </script>
 
-{#if feed}
+{#if feed || posts.length}
 	<div class="ticker" role="region" aria-label="Netizen">
-		<span class="label" title={feed.at ? `Diperbarui ${ago} menit lalu` : 'Netizen mengomentari para pemain (update tiap 5 menit)'}>
+		<span class="label" title={feed?.at ? `Diperbarui ${ago} menit lalu` : 'Netizen & berita pasar (update tiap 5 menit)'}>
 			<span class="live"></span>NETIZEN
 		</span>
 		{#if posts.length}

@@ -17,6 +17,7 @@ import {
 	SAWIT_LEVEL,
 	STOCKS,
 	STOCK_HISTORY,
+	pickStockNews,
 	salaryFor,
 	buildCost,
 	investedCost,
@@ -848,14 +849,37 @@ function initStocks() {
 const stocksOf = (state) => (state.stocks ??= initStocks());
 
 
+// ambang "turun drastis": kalau langkah acak <= ini, tunda sejenak & keluarkan berita dulu
+const DROP_THRESHOLD = -0.11;
+
+/** simpan berita saham untuk ticker (dibaca client) */
+function pushStockNews(state, sym, text) {
+	state.newsSeq = (state.newsSeq ?? 0) + 1;
+	state.stockNews = [...(state.stockNews ?? []), { id: state.newsSeq, sym, text, t: Date.now() }].slice(-6);
+	log(state, `📰 ${text}.`);
+}
+
 /** random walk tiap giliran, ditarik pelan ke harga dasar */
 function tickStocks(state, rng = Math.random) {
 	const book = stocksOf(state);
 	for (const def of STOCKS) {
 		const s = (book[def.sym] ??= { price: def.base, prev: def.base, history: [def.base] });
-		const z = (rng() + rng() + rng() - 1.5) * 2; // ~N(0,1), maks +-3
-		const pull = 0.04 * Math.log(def.base / s.price);
-		const pct = Math.max(-0.25, Math.min(0.25, def.vol * z + pull));
+		let pct;
+		if (s.shock != null) {
+			// penurunan yang sudah diumumkan beritanya giliran lalu -> eksekusi sekarang
+			pct = s.shock;
+			s.shock = null;
+		} else {
+			const z = (rng() + rng() + rng() - 1.5) * 2; // ~N(0,1), maks +-3
+			const pull = 0.04 * Math.log(def.base / s.price);
+			pct = Math.max(-0.25, Math.min(0.25, def.vol * z + pull));
+			// akan turun drastis? tahan dulu: keluarkan berita relevan & beri "euforia" tipis, drop giliran depan
+			if (pct <= DROP_THRESHOLD) {
+				s.shock = pct;
+				pct = 0.01 + rng() * 0.03; // pump kecil dulu
+				pushStockNews(state, def.sym, pickStockNews(def.sym, rng));
+			}
+		}
 		const next = Math.max(Math.ceil(def.base * 0.2), Math.min(def.base * 5, Math.round(s.price * (1 + pct))));
 		const wick = () => 1 + rng() * def.vol * 0.7;
 		const candle = {

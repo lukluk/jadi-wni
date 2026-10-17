@@ -53,6 +53,7 @@ function snapshot(state, sorotan = []) {
 		pemain_giliran_sekarang: state.players[state.turn]?.name,
 		kas_negara: formatRp(state.kasNegara ?? 0),
 		sorotan_baru: sorotan,
+		berita_saham_terbaru: (state.stockNews ?? []).slice(-3).map((n) => n.text),
 		pemain: players,
 		kejadian_terbaru: state.log.slice(-15).map((l) => l.msg)
 	};
@@ -64,6 +65,7 @@ Gaya: bahasa gaul Indonesia, julid tapi lucu, boleh sarkas, ada yang nyinyir, ad
 Setiap cuitan menyebut nama pemain yang sebenarnya ada di data. Jangan mengarang angka. Tanpa SARA, tanpa ujaran kebencian, tanpa kata kasar berat.
 Kalau ada "sorotan_baru" di data, WAJIB buat cuitan ucapan selamat (kind "selamat") untuk tiap sorotan, riuh dan heboh ala netizen.
 Untuk sorotan pemain baru jadi TERKAYA nomor 1, sertakan juga satu berita bergaya media (kind "berita", handle "@Tempo_WNI", gaya headline), contoh: "Tempo: Budi masuk jajaran 9 naga" lalu satu kalimat latar tentang hartanya.
+Kalau ada "berita_saham_terbaru", buat 1-2 cuitan netizen yang bereaksi ke berita itu (panik, nyinyir, atau malah hype beli saham) sambil menyebut kode sahamnya.
 Sisa cuitan tetap komentar/saran biasa. Total tetap ${MAX_POSTS} cuitan.
 Balas HANYA JSON array tanpa teks lain: [{"handle":"@akun_netizen","text":"isi cuitan maks 200 karakter","kind":"komentar"|"saran"|"selamat"|"berita"}]`;
 

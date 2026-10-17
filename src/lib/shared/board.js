@@ -228,6 +228,49 @@ export const STOCKS = [
 ];
 export const STOCK_HISTORY = 24;
 
+/**
+ * Berita "pemanis" yang keluar SEBELUM saham turun drastis (pump/rumor lalu dump).
+ * Dipakai untuk ticker Netizen. Teks dipilih acak per saham sebagai pemantik,
+ * dan juga disuapkan ke AI netizen supaya mereka ikut komentar.
+ */
+export const STOCK_NEWS = {
+	BACA: [
+		'BACA akan menambah lini usaha baru, investor euforia borong',
+		'Rumor restrukturisasi utang jumbo di BACA bikin pasar waswas',
+		'BACA dikabarkan terseret kredit macet korporasi raksasa',
+		'OJK panggil direksi BACA soal rasio kredit bermasalah',
+		'BACA umumkan buyback saham, analis malah ragu'
+	],
+	BIBR: [
+		'BIBR ekspansi ke 100 kota, biaya operasional membengkak',
+		'Gagal bayar nasabah mikro BIBR dilaporkan melonjak',
+		'BIBR tunda bagi dividen tahun ini, investor kecewa',
+		'BIBR gandeng startup paylater, risiko dipertanyakan'
+	],
+	ASIK: [
+		'ASIK luncurkan mobil listrik, tapi penjualan dilaporkan loyo',
+		'Permintaan alat berat anjlok, proyeksi laba ASIK dipangkas',
+		'ASIK kena recall massal, reputasi dipertaruhkan',
+		'Harga komoditas jatuh, order tambang ASIK menyusut'
+	],
+	GATO: [
+		'GATO bakar uang lagi demi promo, kerugian membengkak',
+		'Investor besar GATO dikabarkan mau cabut',
+		'GATO PHK ribuan karyawan, dalih "efisiensi"',
+		'Valuasi GATO dipertanyakan, bubble startup tekno?',
+		'Fitur baru GATO sepi peminat, pertumbuhan melambat'
+	]
+};
+const STOCK_NEWS_GENERIK = (sym) => [
+	`Sentimen pasar memburuk, ${sym} ikut tertekan`,
+	`Asing lepas kepemilikan di ${sym}, harga rawan koreksi`,
+	`Analis turunkan rekomendasi ${sym} jadi "jual"`
+];
+export function pickStockNews(sym, rng = Math.random) {
+	const pool = STOCK_NEWS[sym] ?? STOCK_NEWS_GENERIK(sym);
+	return pool[Math.floor(rng() * pool.length)];
+}
+
 /** candle OHLC saham; game lama yang belum punya `candles` diturunkan dari riwayat harga penutupan */
 export function candlesOf(st) {
 	if (st?.candles?.length) return st.candles;

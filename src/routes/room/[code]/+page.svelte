@@ -1101,7 +1101,7 @@
 {/if}
 
 {#if game && me}
-	{#if myPlayer}<Netizen />{/if}
+	{#if myPlayer}<Netizen news={game.stockNews ?? []} />{/if}
 	<Voice bind:this={voice} bind:streams={voiceStreams} bind:states={voiceStates} {isHost} meId={me.id} canVoice={!!myPlayer} players={game.players} bind:speaking bind:members={voiceMembers} />
 {/if}
 
