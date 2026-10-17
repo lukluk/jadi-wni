@@ -40,7 +40,9 @@
 	let toast = $state('');
 	let toastTimer;
 	let selectedTile = $state(/** @type {number|null} */ (null));
-	let tab = $state('log');
+	let tab = $state('portfolio');
+	let showLog = $state(false);
+	let logModalEl = $state(/** @type {HTMLElement|null} */ (null));
 	let chat = $state(/** @type {any[]} */ ([]));
 	let chatText = $state('');
 	let unread = $state(0);
@@ -305,6 +307,10 @@
 		return null;
 	});
 	function onHotkey(e) {
+		if (e.key === 'Escape' && showLog) {
+			showLog = false;
+			return;
+		}
 		if (e.code !== 'Space' && e.key !== ' ') return;
 		if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
 		const el = /** @type {HTMLElement|null} */ (document.activeElement);
@@ -437,11 +443,15 @@
 	});
 
 	$effect(() => {
-		// auto-scroll log
-		game?.log.length;
+		// auto-scroll obrolan
 		chat.length;
 		tab;
-		if (tab === 'log' || tab === 'chat') tick().then(() => logEl && (logEl.scrollTop = logEl.scrollHeight));
+		if (tab === 'chat') tick().then(() => logEl && (logEl.scrollTop = logEl.scrollHeight));
+	});
+	$effect(() => {
+		// auto-scroll modal kejadian ke bawah saat dibuka / ada kejadian baru
+		game?.log.length;
+		if (showLog) tick().then(() => logModalEl && (logModalEl.scrollTop = logModalEl.scrollHeight));
 	});
 
 	$effect(() => {
@@ -840,7 +850,6 @@
 
 			<div class="feed">
 				<div class="tabs" role="tablist">
-					<button role="tab" aria-selected={tab === 'log'} class:active={tab === 'log'} onclick={() => (tab = 'log')}>Kejadian</button>
 					<button role="tab" aria-selected={tab === 'chat'} class:active={tab === 'chat'} onclick={() => { tab = 'chat'; unread = 0; }}>
 						Obrolan{#if unread}<span class="badge">{unread}</span>{/if}
 					</button>
@@ -850,11 +859,7 @@
 					<button role="tab" aria-selected={tab === 'portfolio'} class:active={tab === 'portfolio'} onclick={() => (tab = 'portfolio')}>Portofolio</button>
 				</div>
 				<div class="feed-body" class:tall={tab === 'market' || tab === 'portfolio'} bind:this={logEl}>
-					{#if tab === 'log'}
-						{#each game.log as l}
-							<p><time>{fmtTime(l.t)}</time> {l.msg}</p>
-						{/each}
-					{:else if tab === 'market'}
+					{#if tab === 'market'}
 						<Market {game} meId={me?.id} onAction={act} onTile={(i) => (selectedTile = i)} />
 					{:else if tab === 'portfolio'}
 						<Portfolio {game} meId={me?.id} onAction={act} onTile={(i) => (selectedTile = i)} />
@@ -988,8 +993,30 @@
 	<Voice bind:this={voice} bind:streams={voiceStreams} bind:states={voiceStates} {isHost} meId={me.id} canVoice={!!myPlayer} players={game.players} bind:speaking bind:members={voiceMembers} />
 {/if}
 
-{#if game?.status === 'playing' && myPlayer && !myPlayer.bankrupt}
-	<button class="surrender" onclick={surrender}>Menyerah</button>
+{#if game && me}
+	<div class="bottombar">
+		<button class="pill" onclick={() => (showLog = true)}>📜 Kejadian</button>
+		{#if game.status === 'playing' && myPlayer && !myPlayer.bankrupt}
+			<button class="pill" onclick={surrender}>Menyerah</button>
+		{/if}
+	</div>
+{/if}
+
+{#if showLog && game}
+	<div class="log-backdrop" onclick={() => (showLog = false)} role="presentation"></div>
+	<div class="log-modal" role="dialog" aria-modal="true" aria-label="Kejadian">
+		<div class="log-head">
+			<strong>📜 Kejadian</strong>
+			<button class="log-close" onclick={() => (showLog = false)} aria-label="Tutup">✕</button>
+		</div>
+		<div class="log-body" bind:this={logModalEl}>
+			{#each game.log as l}
+				<p><time>{fmtTime(l.t)}</time> {l.msg}</p>
+			{:else}
+				<p class="empty">Belum ada kejadian.</p>
+			{/each}
+		</div>
+	</div>
 {/if}
 
 {#if toast}<div class="toast" role="status">{toast}</div>{/if}
@@ -1502,12 +1529,16 @@
 		min-width: 0;
 		padding: 0.35rem 0.6rem;
 	}
-	/* Menyerah: di bar bawah, tepat di kiri ikon pengaturan */
-	.surrender {
+	/* bar bawah: Kejadian + Menyerah, tepat di kiri ikon pengaturan */
+	.bottombar {
 		position: fixed;
 		right: 2.5rem;
 		bottom: 0.2rem;
 		z-index: 71;
+		display: flex;
+		gap: 0.4rem;
+	}
+	.pill {
 		height: 1.8rem;
 		padding: 0 0.75rem;
 		border-radius: 999px;
@@ -1517,6 +1548,61 @@
 		font-weight: 800;
 		font-size: 0.72rem;
 		cursor: pointer;
+	}
+	.log-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 84;
+		background: rgba(20, 33, 61, 0.45);
+	}
+	.log-modal {
+		position: fixed;
+		left: 50%;
+		top: 50%;
+		transform: translate(-50%, -50%);
+		z-index: 85;
+		width: min(460px, calc(100vw - 2rem));
+		max-height: min(70vh, 640px);
+		display: grid;
+		grid-template-rows: auto 1fr;
+		background: var(--paper);
+		border: 3px solid var(--ink);
+		border-radius: 14px;
+		box-shadow: 8px 8px 0 var(--ink);
+		overflow: hidden;
+		animation: rentin 0.25s ease both;
+	}
+	.log-head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 0.6rem 0.9rem;
+		border-bottom: 2px solid var(--ink);
+		font-size: 1.05rem;
+	}
+	.log-close {
+		border: 2px solid var(--ink);
+		background: #fff;
+		border-radius: 50%;
+		width: 1.8rem;
+		height: 1.8rem;
+		font-weight: 800;
+		cursor: pointer;
+		line-height: 1;
+	}
+	.log-body {
+		overflow-y: auto;
+		padding: 0.6rem 0.9rem 0.9rem;
+		font-size: 0.86rem;
+		line-height: 1.4;
+	}
+	.log-body p {
+		margin: 0 0 0.35rem;
+	}
+	.log-body time {
+		color: var(--ink-soft);
+		font-variant-numeric: tabular-nums;
+		margin-right: 0.3rem;
 	}
 	.danger {
 		display: flex;
