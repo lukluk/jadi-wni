@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, richestId, canBuild } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, richestId, canBuild, playerTodos } from '$lib/shared/board.js';
 	import Avatar from './Avatar.svelte';
 	import { play } from '$lib/sound.js';
 	import { onMount } from 'svelte';
@@ -188,6 +188,8 @@
 	});
 	const kingId = $derived(richestId(game));
 	const currentId = $derived(game.status === 'playing' ? game.players[game.turn]?.id : null);
+	// catatan tempel (sticky note) rekomendasi untuk pemain ini; kosong = tidak ditampilkan
+	const todos = $derived(game.status === 'playing' ? playerTodos(game, meId) : []);
 </script>
 
 <div class="arena">
@@ -229,6 +231,16 @@
 	{/each}
 
 	<div class="center" style:grid-row="2 / {L.rows}" style:grid-column="2 / {L.cols}">
+		{#if todos.length}
+			<aside class="todo-note" aria-label="Rekomendasi untukmu">
+				<strong class="tn-title">📝 Saran buatmu</strong>
+				<ul>
+					{#each todos as it (it.key)}
+						<li class:done={it.done}>{it.text}</li>
+					{/each}
+				</ul>
+			</aside>
+		{/if}
 		{@render center()}
 	</div>
 
@@ -527,6 +539,7 @@
 		}
 	}
 	.center {
+		position: relative;
 		background:
 			radial-gradient(circle at 50% 40%, #e8f5f8, var(--ktp) 70%);
 		display: grid;
@@ -534,6 +547,64 @@
 		padding: 3%;
 		min-height: 0;
 		overflow: auto;
+	}
+	/* catatan tempel rekomendasi: menempel di pojok kanan-atas kotak biru */
+	.todo-note {
+		position: absolute;
+		top: 2.5%;
+		right: 2.5%;
+		z-index: 4;
+		width: clamp(96px, 23cqi, 190px);
+		padding: clamp(0.3rem, 1.4cqi, 0.6rem) clamp(0.35rem, 1.5cqi, 0.65rem);
+		background: linear-gradient(180deg, #fff7a8, #ffee82);
+		border: 1px solid rgba(20, 33, 61, 0.14);
+		box-shadow: 2px 3px 7px rgba(20, 33, 61, 0.28);
+		transform: rotate(2.4deg);
+		font-size: clamp(0.5rem, 1.55cqi, 0.78rem);
+		line-height: 1.28;
+		color: #4a4320;
+		text-align: left;
+	}
+	.todo-note::before {
+		/* selotip di atas sticky note */
+		content: '';
+		position: absolute;
+		top: -0.5rem;
+		left: 50%;
+		transform: translateX(-50%) rotate(-3deg);
+		width: 46%;
+		height: 0.85rem;
+		background: rgba(255, 255, 255, 0.5);
+		border: 1px solid rgba(20, 33, 61, 0.08);
+	}
+	.tn-title {
+		display: block;
+		font-weight: 800;
+		margin-bottom: 0.25em;
+		color: #7a6a16;
+	}
+	.todo-note ul {
+		margin: 0;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 0.22em;
+	}
+	.todo-note li {
+		position: relative;
+		padding-left: 1.05em;
+	}
+	.todo-note li::before {
+		content: '☐';
+		position: absolute;
+		left: 0;
+	}
+	.todo-note li.done {
+		color: rgba(74, 67, 32, 0.55);
+		text-decoration: line-through;
+	}
+	.todo-note li.done::before {
+		content: '☑';
 	}
 	.token {
 		position: absolute;

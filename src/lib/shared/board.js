@@ -325,6 +325,35 @@ export function richestId(state) {
 }
 
 /**
+ * Rekomendasi to-do rule-based (tanpa AI) untuk pemain: fokus pada grup warna yang sudah
+ * dikuasai minimal separuh (1/2) atau dua-pertiga (2/3). Kosong kalau belum ada grup sejauh itu.
+ * Item `done: true` dipakai untuk mencoret rekomendasi yang sudah terpenuhi.
+ * @returns {{ key:string, text:string, done:boolean }[]}
+ */
+export function playerTodos(state, playerId) {
+	if (!playerId || !state?.tiles) return [];
+	const todos = [];
+	for (const [gid, g] of Object.entries(GROUPS)) {
+		const tiles = TILES.filter((t) => t.group === gid);
+		const size = tiles.length;
+		const owned = tiles.filter((t) => state.tiles[t.i]?.owner === playerId);
+		if (owned.length < Math.ceil(size / 2)) continue; // belum 1/2 atau 2/3 -> lewati
+		if (owned.length < size) {
+			const missing = tiles.filter((t) => state.tiles[t.i]?.owner !== playerId).map((t) => t.name);
+			todos.push({ key: `grup-${gid}`, done: false, text: `Lengkapi ${g.label}: beli ${missing.join(', ')}` });
+		} else {
+			todos.push({ key: `grup-${gid}`, done: true, text: `Kuasai grup ${g.label}` });
+			const mortgaged = owned.some((t) => state.tiles[t.i]?.mortgaged);
+			if (!mortgaged) {
+				const allBuilt = owned.every((t) => (state.tiles[t.i]?.level ?? 0) > 0);
+				todos.push({ key: `bangun-${gid}`, done: allBuilt, text: `Bangun rumah di ${g.label}` });
+			}
+		}
+	}
+	return todos;
+}
+
+/**
  * Perkiraan kalau pemain menyerah. Semua aset dijual otomatis: properti di harga beli (digadai: separuh),
  * bangunan di harga jual (separuh biaya bangun), saham di harga sekarang. Hasilnya dipakai menutup tagihan:
  *   sisa > 0  -> lanjut main hanya dengan uang sisa; sisa <= 0 -> bangkrut.
