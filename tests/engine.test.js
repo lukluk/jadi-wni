@@ -10,7 +10,7 @@ import {
 	expireRent,
 	expireKick
 } from '../server/game/engine.js';
-import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, surrenderPlan, START_MONEY, STOCKS } from '../src/lib/shared/board.js';
+import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, surrenderPlan, START_MONEY, STOCKS, usahaKey, netWorth } from '../src/lib/shared/board.js';
 
 function seeded(seed) {
 	return () => {
@@ -270,6 +270,31 @@ test('marketplace: kontainer tawaran tanpa harga hilang saat tawaran terakhir di
 	// aset digadai tidak bisa ditawar
 	s.tiles[1].mortgaged = true;
 	assert.throws(() => applyAction(s, b, { type: 'mkOffer', tile: 1, price: 30 }), /digadai/);
+});
+
+test('usaha: beli/jual di pasar, pindah pemilik, masuk net worth', () => {
+	const s = newGame(2, seeded(31));
+	const [a, b] = s.players.map((p) => p.id);
+	applyAction(s, a, { type: 'buildUsaha', id: 'warung' }); // modal 250
+	assert.equal(s.players[0].usaha, 'warung');
+	assert.throws(() => applyAction(s, a, { type: 'buildUsaha', id: 'pabrik' }), /cuma boleh satu/); // maks 1
+	// net worth termasuk nilai usaha (= modal 250)
+	assert.equal(netWorth(s, s.players[0]) - (START_MONEY - 250), 250);
+	// jual ke pasar
+	applyAction(s, a, { type: 'mkList', tile: 'usaha', price: 400 });
+	assert.equal(s.market[usahaKey(a)].price, 400);
+	assert.throws(() => applyAction(s, a, { type: 'mkBuy', tile: usahaKey(a) }), /usahamu sendiri/);
+	const bBefore = s.players[1].money, aBefore = s.players[0].money;
+	applyAction(s, b, { type: 'mkBuy', tile: usahaKey(a) });
+	assert.equal(s.players[1].usaha, 'warung');
+	assert.equal(s.players[0].usaha, null);
+	assert.equal(s.players[1].money, bBefore - 400);
+	assert.equal(s.players[0].money, aBefore + 400);
+	assert.equal(s.market[usahaKey(a)], undefined);
+	// pembeli yang sudah punya usaha tak bisa beli lagi
+	applyAction(s, a, { type: 'buildUsaha', id: 'reseller' });
+	applyAction(s, b, { type: 'mkList', tile: 'usaha', price: 100 });
+	assert.throws(() => applyAction(s, a, { type: 'mkBuy', tile: usahaKey(b) }), /sudah punya usaha/);
 });
 
 test('marketplace: aset bergedung / digadai tidak bisa dijual, bangkrut bersihkan listing', () => {

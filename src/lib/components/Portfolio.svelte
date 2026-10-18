@@ -1,6 +1,6 @@
 <script>
 	import Candles from './Candles.svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf, USAHA, usahaById, usahaPayback } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf, USAHA, usahaById, usahaPayback, usahaKey } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -52,6 +52,7 @@
 	// usaha: tiap pemain boleh pilih satu
 	const myUsaha = $derived(usahaById(me?.usaha));
 	let showUsaha = $state(false);
+	let usahaPrice = $state(/** @type {string|number|undefined} */ (undefined));
 	let usahaDialog = $state();
 	$effect(() => {
 		if (showUsaha) usahaDialog?.showModal();
@@ -125,13 +126,38 @@
 			<section class="usaha-sec">
 				<h4>💼 Usaha</h4>
 				{#if myUsaha}
+					{@const uListing = game.market?.[usahaKey(meId)]}
+					{@const uOffers = Object.keys(uListing?.offers ?? {}).length}
 					<div class="usaha-have">
 						<span class="u-emoji">{myUsaha.emoji}</span>
 						<div>
 							<strong>{myUsaha.name}</strong>
-							<small>Setoran {formatRp(myUsaha.income)} tiap lewat GAJIAN</small>
+							<small>Setoran {formatRp(myUsaha.income)} tiap lewat GAJIAN · aset {formatRp(myUsaha.cost)}</small>
 						</div>
 					</div>
+					<form
+						class="row"
+						onsubmit={(e) => {
+							e.preventDefault();
+							onAction({ type: 'mkList', tile: 'usaha', price: Math.round(Number(usahaPrice ?? uListing?.price ?? myUsaha.cost)) });
+						}}
+					>
+						<input
+							type="number"
+							min="1"
+							inputmode="numeric"
+							aria-label="Harga jual usaha (jt)"
+							value={usahaPrice ?? uListing?.price ?? myUsaha.cost}
+							oninput={(e) => (usahaPrice = e.currentTarget.value)}
+						/>
+						<button class="btn small">{uListing ? 'Ubah harga' : 'Jual ke Pasar'}</button>
+						{#if uListing}
+							<button type="button" class="btn small" onclick={() => onAction({ type: 'mkUnlist', tile: 'usaha' })}>Tarik</button>
+						{/if}
+					</form>
+					{#if uListing}
+						<small class="sum">🏷️ Dijual {formatRp(uListing.price)}{uOffers ? ` · ${uOffers} tawaran, cek tab Pasar` : ' · belum ada tawaran'}</small>
+					{/if}
 				{:else}
 					<p class="sum">Buka <strong>satu</strong> usaha untuk pemasukan pasif tiap gajian — pilih sekali, tak bisa ganti.</p>
 					<button class="btn primary" onclick={() => (showUsaha = true)}>🏗️ Bangun usaha</button>

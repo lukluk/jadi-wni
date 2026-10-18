@@ -324,9 +324,13 @@ export function calendarDate(base, laps, pos) {
 
 /** kartu Pemutihan (bebas penjara) juga bisa dijual di Pasar; kuncinya "card:<idPenjual>" */
 export const isCardKey = (k) => typeof k === 'string' && k.startsWith('card:');
+export const isUsahaKey = (k) => typeof k === 'string' && k.startsWith('usaha:');
+export const usahaKey = (id) => `usaha:${id}`;
+export const usahaSellerId = (k) => (isUsahaKey(k) ? k.slice('usaha:'.length) : null);
 export const JAIL_CARD = { name: 'Kartu Pemutihan', short: '🎫', type: 'card', group: null, price: 0 };
+export const USAHA_CARD = { name: 'Usaha', short: '💼', type: 'usaha', group: null, price: 0 };
 /** petak (angka) atau kartu (kunci "card:...") untuk satu listing Pasar */
-export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : TILES[+k]);
+export const listingTile = (k) => (isCardKey(k) ? JAIL_CARD : isUsahaKey(k) ? USAHA_CARD : TILES[+k]);
 
 /** simbol gulungan judol slot */
 export const SLOT_SYMBOLS = ['7️⃣', '💎', '🍒', '🍋', '🔔', '💀'];
@@ -370,6 +374,8 @@ export function netWorth(state, p) {
 		total += t.mortgaged ? tile.price / 2 : tile.price;
 		if (tile.type === 'property') total += investedCost(GROUPS[tile.group].houseCost, t.level);
 	}
+	const u = usahaById(p.usaha);
+	if (u) total += u.cost; // usaha dihitung aset senilai modal awal
 	return total;
 }
 

@@ -1,6 +1,8 @@
 // Mesin aturan "Jadi WNI" — server-authoritative, mutasi state secara langsung.
 import {
 	isCardKey,
+	isUsahaKey,
+	usahaKey,
 	TILES,
 	GROUPS,
 	CARDS,
@@ -1046,7 +1048,14 @@ function judol(state, userId, amount, rng) {
 }
 
 const cardKey = (id) => `card:${id}`;
-const listingName = (key) => (isCardKey(key) ? 'Kartu Pemutihan' : TILES[key].name);
+const listingName = (state, key) => {
+	if (isCardKey(key)) return 'Kartu Pemutihan';
+	if (isUsahaKey(key)) {
+		const u = usahaById(state.market?.[key]?.usaha);
+		return u ? `usaha ${u.emoji} ${u.name}` : 'usaha';
+	}
+	return TILES[key].name;
+};
 const market = (state) => (state.market ??= {});
 const dropListing = (state, tileIdx) => {
 	if (state.market) delete state.market[tileIdx];
@@ -1077,6 +1086,14 @@ function requireListing(state, tileIdx) {
 		}
 		return { l, own: null, tile: null };
 	}
+	if (isUsahaKey(tileIdx)) {
+		const seller = playerById(state, l.seller);
+		if (!seller || seller.bankrupt || seller.usaha !== l.usaha) {
+			dropListing(state, tileIdx);
+			fail('Penjual sudah tidak punya usaha ini.');
+		}
+		return { l, own: null, tile: null };
+	}
 	const own = state.tiles[tileIdx];
 	if (!own || own.owner !== l.seller) {
 		dropListing(state, tileIdx);
@@ -1094,7 +1111,7 @@ function sellable(state, tile, own) {
 /** pasang listing baru atau ubah harga listing yang ada */
 /** kabar Pasar untuk client: notifikasi, titik di tab, dan animasi kartu pindah */
 function mkEvent(state, kind, tileIdx, actor, target, price, extra = {}) {
-	state.mkEvent = { seq: (state.mkEvent?.seq ?? 0) + 1, kind, tile: isCardKey(tileIdx) ? tileIdx : +tileIdx, actor, target, price, ...extra };
+	state.mkEvent = { seq: (state.mkEvent?.seq ?? 0) + 1, kind, tile: isCardKey(tileIdx) || isUsahaKey(tileIdx) ? tileIdx : +tileIdx, actor, target, price, ...extra };
 }
 
 function listAsset(state, userId, tileIdx, price) {
@@ -1108,6 +1125,19 @@ function listAsset(state, userId, tileIdx, price) {
 		m[key] = { seller: p.id, price: amount, offers: m[key]?.offers ?? {} };
 		mkEvent(state, edit ? 'reprice' : 'list', key, p.id, null, amount);
 		log(state, `🏷️ ${p.name} ${edit ? 'ubah harga' : 'jual'} Kartu Pemutihan di Pasar: ${formatRp(amount)}.`);
+		return;
+	}
+	if (tileIdx === 'usaha' || isUsahaKey(tileIdx)) {
+		const p = requireActive(state, userId);
+		const u = usahaById(p.usaha);
+		if (!u) fail('Kamu belum punya usaha.');
+		const key = usahaKey(p.id);
+		const m = market(state);
+		const edit = !!m[key];
+		const amount = parsePrice(price);
+		m[key] = { seller: p.id, price: amount, offers: m[key]?.offers ?? {}, usaha: p.usaha };
+		mkEvent(state, edit ? 'reprice' : 'list', key, p.id, null, amount);
+		log(state, `🏷️ ${p.name} ${edit ? 'ubah harga' : 'jual'} usaha ${u.emoji} ${u.name} di Pasar: ${formatRp(amount)}.`);
 		return;
 	}
 	const { p, tile, own } = requireOwner(state, userId, tileIdx);
@@ -1126,6 +1156,13 @@ function unlistAsset(state, userId, tileIdx) {
 		if (!market(state)[cardKey(p.id)]) fail('Kartu ini tidak dijual.');
 		dropListing(state, cardKey(p.id));
 		log(state, `${p.name} tarik Kartu Pemutihan dari Pasar.`);
+		return;
+	}
+	if (tileIdx === 'usaha' || isUsahaKey(tileIdx)) {
+		const p = requireActive(state, userId);
+		if (!market(state)[usahaKey(p.id)]) fail('Usaha ini tidak dijual.');
+		dropListing(state, usahaKey(p.id));
+		log(state, `${p.name} tarik usaha dari Pasar.`);
 		return;
 	}
 	const { p, tile } = requireOwner(state, userId, tileIdx);
@@ -1147,6 +1184,22 @@ function completeSale(state, tileIdx, buyer, price, how) {
 		dropListing(state, tileIdx);
 		mkEvent(state, 'sold', tileIdx, buyer.id, seller.id, price, { from: seller.id, to: buyer.id });
 		log(state, `🤝 ${buyer.name} ${how} Kartu Pemutihan dari ${seller.name} seharga ${formatRp(price)}.`);
+		return;
+	}
+	if (isUsahaKey(tileIdx)) {
+		const { l } = requireListing(state, tileIdx);
+		const seller = playerById(state, l.seller);
+		if (buyer.id === seller.id) fail('Tidak bisa beli usahamu sendiri.');
+		if (buyer.usaha) fail('Kamu sudah punya usaha — cuma boleh satu.');
+		if (buyer.money < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
+		const u = usahaById(l.usaha);
+		buyer.money -= price;
+		seller.money += price;
+		seller.usaha = null;
+		buyer.usaha = l.usaha;
+		dropListing(state, tileIdx);
+		mkEvent(state, 'sold', tileIdx, buyer.id, seller.id, price, { from: seller.id, to: buyer.id });
+		log(state, `🤝 ${buyer.name} ${how} usaha ${u?.emoji ?? ''} ${u?.name ?? ''} dari ${seller.name} seharga ${formatRp(price)}.`);
 		return;
 	}
 	const { l, own, tile } = requireListing(state, tileIdx);
@@ -1178,6 +1231,7 @@ function marketBuy(state, userId, tileIdx) {
 function offerTarget(state, userId, tileIdx) {
 	const buyer = requireActive(state, userId);
 	if (tileIdx === 'card' || isCardKey(tileIdx)) fail('Kartu Pemutihan hanya bisa ditawar kalau dipasang di Pasar.');
+	if (tileIdx === 'usaha' || isUsahaKey(tileIdx)) fail('Usaha hanya bisa ditawar kalau dipasang di Pasar.');
 	const tile = TILES[tileIdx];
 	const own = state.tiles[tileIdx];
 	if (!tile || !isOwnable(tile) || !own) fail('Aset ini belum dimiliki siapa pun.');
@@ -1208,8 +1262,8 @@ function marketOffer(state, userId, tileIdx, price) {
 	log(
 		state,
 		l.price == null
-			? `💬 ${buyer.name} menawar ${listingName(tileIdx)} ${formatRp(amount)} (belum dijual).`
-			: `💬 ${buyer.name} menawar ${listingName(tileIdx)} ${formatRp(amount)} (harga jual ${formatRp(l.price)}).`
+			? `💬 ${buyer.name} menawar ${listingName(state, tileIdx)} ${formatRp(amount)} (belum dijual).`
+			: `💬 ${buyer.name} menawar ${listingName(state, tileIdx)} ${formatRp(amount)} (harga jual ${formatRp(l.price)}).`
 	);
 }
 
@@ -1228,6 +1282,10 @@ function marketCancelOffer(state, userId, tileIdx) {
 }
 
 function requireSeller(state, userId, key) {
+	if (isUsahaKey(key)) {
+		if (key !== usahaKey(userId)) fail('Usaha ini bukan milikmu.');
+		return requireActive(state, userId);
+	}
 	if (!isCardKey(key)) return requireOwner(state, userId, key);
 	if (key !== cardKey(userId)) fail('Kartu ini bukan milikmu.');
 	return requireActive(state, userId);
@@ -1253,7 +1311,7 @@ function marketReject(state, userId, tileIdx, buyerId) {
 	const buyer = playerById(state, buyerId);
 	delete l.offers[buyerId];
 	mkEvent(state, 'reject', tileIdx, userId, buyerId, 0);
-	log(state, `${playerById(state, userId).name} tolak tawaran ${buyer?.name ?? 'pemain'} untuk ${listingName(tileIdx)}.`);
+	log(state, `${playerById(state, userId).name} tolak tawaran ${buyer?.name ?? 'pemain'} untuk ${listingName(state, tileIdx)}.`);
 	pruneOfferContainer(state, tileIdx);
 }
 

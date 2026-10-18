@@ -1,5 +1,5 @@
 <script>
-	import { GROUPS, formatRp, isCardKey, listingTile } from '$lib/shared/board.js';
+	import { GROUPS, formatRp, isCardKey, isUsahaKey, listingTile, usahaById } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -39,10 +39,10 @@
 			{@const negoDefault = myOffer ?? (listed ? Math.round(l.price * 0.8) : (l.tile.price ?? 1))}
 			<article class="item" class:mine={mineL}>
 				<header>
-					<button class="name" onclick={() => !isCardKey(l.i) && onTile(l.i)} title="Lihat detail petak">
-						{#if l.tile.group}<i class="band" style:background={GROUPS[l.tile.group].color}></i>{:else if isCardKey(l.i)}🎫{/if}
-						{l.tile.name}
-						{#if (game.tiles[l.i]?.level ?? 0) > 0}<small>lv {game.tiles[l.i].level}</small>{/if}
+					<button class="name" onclick={() => !isCardKey(l.i) && !isUsahaKey(l.i) && onTile(l.i)} title="Lihat detail">
+						{#if l.tile.group}<i class="band" style:background={GROUPS[l.tile.group].color}></i>{:else if isCardKey(l.i)}🎫{:else if isUsahaKey(l.i)}{usahaById(l.usaha)?.emoji ?? '💼'}{/if}
+						{isUsahaKey(l.i) ? (usahaById(l.usaha)?.name ?? 'Usaha') : l.tile.name}
+						{#if isUsahaKey(l.i)}<small>usaha</small>{:else if (game.tiles[l.i]?.level ?? 0) > 0}<small>lv {game.tiles[l.i].level}</small>{/if}
 					</button>
 					<strong class="price">{listed ? formatRp(l.price) : '💬 ditawar'}</strong>
 				</header>
