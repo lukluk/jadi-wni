@@ -461,6 +461,23 @@ export function attachSocket(httpServer) {
 		});
 		socket.on('admin:unsubscribe', () => socket.leave(ADMIN_ROOM));
 
+		// admin: set saldo pemain (sumber kebenaran di memori, langsung tersiar + dipersist)
+		socket.on('admin:setMoney', (payload, ack) => {
+			if (!isAdmin(user)) return ack?.({ ok: false, error: 'Khusus admin.' });
+			const code = String(payload?.code ?? '').toUpperCase().trim();
+			const money = Math.trunc(Number(payload?.money));
+			if (!Number.isFinite(money) || money < 0) return ack?.({ ok: false, error: 'Nominal tidak valid.' });
+			const state = rooms.get(code);
+			if (!state) return ack?.({ ok: false, error: 'Room tidak ditemukan.' });
+			const p = state.players.find((x) => x.id === payload?.playerId);
+			if (!p) return ack?.({ ok: false, error: 'Pemain tidak ditemukan.' });
+			p.money = money;
+			persist(state);
+			broadcast(io, state);
+			if (io.sockets.adapter.rooms.get(ADMIN_ROOM)?.size) io.to(ADMIN_ROOM).emit('admin:rooms', adminPayload());
+			ack?.({ ok: true });
+		});
+
 		socket.on('disconnect', leaveCurrent);
 	});
 

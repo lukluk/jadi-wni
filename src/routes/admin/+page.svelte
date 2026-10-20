@@ -5,6 +5,9 @@
 
 	let { data } = $props();
 
+	/** @type {import('socket.io-client').Socket | null} */
+	let socket = null;
+
 	let connected = $state(false);
 	let denied = $state(false);
 	let serverNow = $state(Date.now());
@@ -41,8 +44,22 @@
 		if (payload.totals) totals = payload.totals;
 	}
 
+	function editMoney(roomCode, p) {
+		const input = window.prompt(`Set saldo untuk ${p.name} (room ${roomCode}):`, String(p.money));
+		if (input == null) return;
+		const money = Math.trunc(Number(input.replace(/[^\d-]/g, '')));
+		if (!Number.isFinite(money) || money < 0) {
+			alert('Nominal tidak valid.');
+			return;
+		}
+		socket?.emit('admin:setMoney', { code: roomCode, playerId: p.id, money }, (res) => {
+			if (!res?.ok) alert(`Gagal: ${res?.error ?? 'tidak diketahui'}`);
+		});
+	}
+
 	onMount(() => {
 		const s = getSocket();
+		socket = s;
 		const onRooms = (p) => apply(p);
 		const onConnect = () => {
 			connected = true;
@@ -67,6 +84,7 @@
 			s.off('connect', onConnect);
 			s.off('disconnect', onDisconnect);
 			s.emit('admin:unsubscribe');
+			socket = null;
 		};
 	});
 </script>
@@ -123,7 +141,7 @@
 									{#if p.id === r.winnerId}<i class="tag win">🏆</i>{/if}
 								</span>
 								<span class="pos">{tileName(p.pos)}</span>
-								<span class="cash">{formatRp(p.money)}</span>
+								<button class="cash" type="button" title="Klik untuk ubah saldo" onclick={() => editMoney(r.code, p)}>{formatRp(p.money)}</button>
 							</li>
 						{/each}
 					</ul>
@@ -361,6 +379,16 @@
 		font-weight: 700;
 		font-size: 0.82rem;
 		white-space: nowrap;
+		color: var(--ink);
+		background: transparent;
+		border: 1px dashed transparent;
+		border-radius: 6px;
+		padding: 0.1rem 0.3rem;
+		cursor: pointer;
+	}
+	.cash:hover {
+		border-color: var(--ink);
+		background: #fff3c4;
 	}
 	@media (max-width: 560px) {
 		.grid {
