@@ -1,6 +1,6 @@
 // Bot AI: pemain komputer yang ikut room kalau host sendirian > 1 menit, lalu main seperti pemain biasa
-// (beli properti, bangun rumah, gadai/tebus, jual-beli saham, bayar sewa, keluar Ruang Sidang, menyerah kalau terjepit).
-import { TILES, GROUPS, STOCKS, JAIL_FINE, maxLevelOf, buildCost, MAX_PLAYERS } from '../src/lib/shared/board.js';
+// (beli properti, bangun rumah, gadai/tebus, jual-beli saham, buka usaha, bayar sewa, keluar Ruang Sidang, menyerah kalau terjepit).
+import { TILES, GROUPS, STOCKS, USAHA, JAIL_FINE, maxLevelOf, buildCost, MAX_PLAYERS } from '../src/lib/shared/board.js';
 import { addPlayer, applyAction, redeemCost, GameError } from './game/engine.js';
 
 export const BOT_JOIN_AFTER_MS = 60_000;
@@ -71,21 +71,28 @@ function develop(state, p) {
 		if (p.money - x.cost >= reserve + extra && act({ type: 'build', tile: x.i })) return true;
 	}
 
+	// buka usaha kalau belum punya & kas cukup: ambil yang terbesar yang masih mampu (sisakan cadangan)
+	if (!p.usaha) {
+		const pick = [...USAHA].sort((a, b) => b.cost - a.cost).find((u) => p.money - u.cost >= reserve + 100);
+		if (pick && act({ type: 'buildUsaha', id: pick.id })) return true;
+	}
+
 	// saham: sekali per giliran
 	if (p.botStockTurn !== state.turnCount) {
 		p.botStockTurn = state.turnCount;
-		// ambil untung kalau naik >= 25% dari harga rata-rata beli
+		// ambil untung kalau naik >= 25%, atau cut loss kalau turun >= 35%
 		for (const [sym, h] of Object.entries(p.stocks ?? {})) {
 			const price = state.stocks?.[sym]?.price ?? 0;
-			if (h.qty > 0 && price * h.qty >= h.cost * 1.25 && act({ type: 'stockSell', sym, qty: h.qty })) return true;
+			const val = price * h.qty;
+			if (h.qty > 0 && (val >= h.cost * 1.25 || val <= h.cost * 0.65) && act({ type: 'stockSell', sym, qty: h.qty })) return true;
 		}
-		// beli saham yang sedang murah (di bawah harga dasar) pakai maksimal 30% kas bebas
-		const free = p.money - reserve - 150;
+		// beli saham yang sedang murah (<= 5% di atas harga dasar) pakai ~35% kas bebas
+		const free = p.money - reserve - 120;
 		if (free >= 40) {
-			const cheap = STOCKS.map((s) => ({ s, price: state.stocks?.[s.sym]?.price ?? s.base })).filter((x) => x.price <= x.s.base * 1.0);
+			const cheap = STOCKS.map((s) => ({ s, price: state.stocks?.[s.sym]?.price ?? s.base })).filter((x) => x.price <= x.s.base * 1.05);
 			if (cheap.length) {
 				const pick = cheap[Math.floor(Math.random() * cheap.length)];
-				const qty = Math.floor((free * 0.3) / pick.price);
+				const qty = Math.floor((free * 0.35) / pick.price);
 				if (qty >= 1 && act({ type: 'stockBuy', sym: pick.s.sym, qty })) return true;
 			}
 		}
