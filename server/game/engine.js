@@ -186,6 +186,7 @@ function reviveBankrupt(state, p) {
 	p.stocks = {};
 	p.usaha = null;
 	p.teamId = null; // kembali main sebagai pemain solo
+	p.rejoined = true; // jatah main lagi hanya sekali
 }
 
 export function removePlayer(state, userId) {
@@ -208,6 +209,7 @@ export function requestJoin(state, user) {
 	if (state.status !== 'playing') fail('Permintaan gabung hanya saat game berjalan.');
 	const existing = playerById(state, user.id);
 	if (existing && !existing.bankrupt) fail('Kamu sudah jadi pemain.');
+	if (existing?.bankrupt && existing.rejoined) fail('Jatah main lagi sudah dipakai (hanya boleh sekali).');
 	// pemain baru butuh slot kosong; pemain rungkat sudah punya slot sendiri
 	if (!existing && state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
 	state.joinRequests ??= [];
@@ -231,8 +233,9 @@ export function approveJoin(state, hostId, userId) {
 	if (!req) fail('Permintaan gabung tidak ada.');
 	const existing = playerById(state, req.id);
 	if (existing) {
-		// pemain rungkat main lagi: hidupkan kembali di slot yang sama
+		// pemain rungkat main lagi: hidupkan kembali di slot yang sama (hanya sekali)
 		if (!existing.bankrupt) return;
+		if (existing.rejoined) fail('Pemain itu sudah pernah main lagi (jatah sekali sudah dipakai).');
 		reviveBankrupt(state, existing);
 		log(state, `✅ ${req.name} main lagi (disetujui host), dapat modal ${formatRp(START_MONEY)}.`);
 		return;

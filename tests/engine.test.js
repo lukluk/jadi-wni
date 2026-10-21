@@ -712,3 +712,19 @@ test('rungkat: pemain aktif tidak bisa minta main lagi', () => {
 	const active = s.players.find((p) => p.id !== s.hostId);
 	assert.throws(() => requestJoin(s, { id: active.id, name: active.name }), GameError);
 });
+
+test('rungkat: join ulang hanya boleh sekali', () => {
+	const s = newGame(3);
+	const host = s.players.find((p) => p.id === s.hostId);
+	const victim = s.players.find((p) => p.id !== s.hostId);
+	// rungkat pertama -> minta main lagi -> disetujui
+	victim.bankrupt = true;
+	victim.money = 0;
+	requestJoin(s, { id: victim.id, name: victim.name });
+	approveJoin(s, host.id, victim.id);
+	assert.equal(victim.rejoined, true, 'ditandai sudah pakai jatah');
+	// rungkat lagi -> tidak boleh minta main lagi
+	victim.bankrupt = true;
+	victim.money = 0;
+	assert.throws(() => requestJoin(s, { id: victim.id, name: victim.name }), GameError, 'join ulang kedua ditolak');
+});

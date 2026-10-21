@@ -276,8 +276,10 @@
 	const canRequestJoin = $derived(
 		game?.status === 'playing' && !myPlayer && game.players.length < MAX_PLAYERS
 	);
-	// pemain rungkat boleh minta main lagi (perlu persetujuan host)
-	const canRequestRejoin = $derived(game?.status === 'playing' && !!myPlayer && myPlayer.bankrupt);
+	// pemain rungkat boleh minta main lagi (perlu persetujuan host) — jatah hanya sekali
+	const canRequestRejoin = $derived(game?.status === 'playing' && !!myPlayer && myPlayer.bankrupt && !myPlayer.rejoined);
+	// sudah rungkat lagi setelah pernah main lagi -> jatah habis
+	const rejoinUsedUp = $derived(game?.status === 'playing' && !!myPlayer && myPlayer.bankrupt && !!myPlayer.rejoined);
 	const cur = $derived(game?.status === 'playing' ? game.players[game.turn] : null);
 	const myTurn = $derived(!!cur && cur.id === me?.id);
 	const curOnline = $derived(!!cur && game.online.includes(cur.id));
@@ -1067,7 +1069,12 @@
 		{:else}
 			<span>💸 Kamu rungkat.</span>
 			<button class="btn primary small" disabled={busy} onclick={() => emit('room:joinRequest')}>🔄 Minta main lagi</button>
+			<small>(cuma boleh sekali)</small>
 		{/if}
+	</div>
+{:else if rejoinUsedUp}
+	<div class="spectate-join" role="status">
+		<span>💸 Kamu rungkat lagi — jatah main lagi sudah habis (cuma sekali).</span>
 	</div>
 {/if}
 
