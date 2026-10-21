@@ -276,6 +276,8 @@
 	const canRequestJoin = $derived(
 		game?.status === 'playing' && !myPlayer && game.players.length < MAX_PLAYERS
 	);
+	// pemain rungkat boleh minta main lagi (perlu persetujuan host)
+	const canRequestRejoin = $derived(game?.status === 'playing' && !!myPlayer && myPlayer.bankrupt);
 	const cur = $derived(game?.status === 'playing' ? game.players[game.turn] : null);
 	const myTurn = $derived(!!cur && cur.id === me?.id);
 	const curOnline = $derived(!!cur && game.online.includes(cur.id));
@@ -1036,13 +1038,14 @@
 	<div class="join-pop" role="alertdialog" aria-live="polite">
 		<strong>✋ Minta gabung ({joinReqs.length})</strong>
 		{#each joinReqs as r (r.id)}
+			{@const rejoin = game.players.some((p) => p.id === r.id)}
 			<div class="join-row">
-				<span class="join-name">{r.name}</span>
-				<button class="btn primary small" disabled={busy || game.players.length >= MAX_PLAYERS} onclick={() => emit('room:joinApprove', { userId: r.id })}>Setujui</button>
+				<span class="join-name">{r.name}{#if rejoin} <small>(rungkat)</small>{/if}</span>
+				<button class="btn primary small" disabled={busy || (!rejoin && game.players.length >= MAX_PLAYERS)} onclick={() => emit('room:joinApprove', { userId: r.id })}>{rejoin ? 'Terima main lagi' : 'Setujui'}</button>
 				<button class="btn small" disabled={busy} onclick={() => emit('room:joinReject', { userId: r.id })}>Tolak</button>
 			</div>
 		{/each}
-		{#if game.players.length >= MAX_PLAYERS}<small>Room penuh (maks {MAX_PLAYERS}).</small>{/if}
+		{#if game.players.length >= MAX_PLAYERS}<small>Room penuh (maks {MAX_PLAYERS}) — tapi pemain rungkat tetap boleh main lagi.</small>{/if}
 	</div>
 {/if}
 
@@ -1053,6 +1056,17 @@
 		{:else}
 			<span>Kamu menonton.</span>
 			<button class="btn primary small" disabled={busy} onclick={() => emit('room:joinRequest')}>✋ Minta gabung</button>
+		{/if}
+	</div>
+{/if}
+
+{#if canRequestRejoin}
+	<div class="spectate-join" role="status">
+		{#if iRequestedJoin}
+			<span>⏳ Menunggu host mengizinkan kamu main lagi…</span>
+		{:else}
+			<span>💸 Kamu rungkat.</span>
+			<button class="btn primary small" disabled={busy} onclick={() => emit('room:joinRequest')}>🔄 Minta main lagi</button>
 		{/if}
 	</div>
 {/if}

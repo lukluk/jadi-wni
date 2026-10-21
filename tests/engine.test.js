@@ -5,6 +5,8 @@ import {
 	addPlayer,
 	startGame,
 	applyAction,
+	requestJoin,
+	approveJoin,
 	GameError,
 	rentFor,
 	expireRent,
@@ -682,4 +684,31 @@ test('merger: ajakan ditolak & kadaluarsa membersihkan tawaran', () => {
 	assert.equal(expireMerge(s, s.mergeOffer.deadline + 1), true, 'lewat deadline -> berubah');
 	assert.equal(s.mergeOffer, null, 'ajakan hilang setelah kadaluarsa');
 	assert.ok(!a.teamId && !b.teamId, 'tetap tak ada group terbentuk');
+});
+
+// ---------- rungkat lalu main lagi (perlu persetujuan host) ----------
+
+test('rungkat: minta main lagi, disetujui host -> hidup lagi dengan modal awal', () => {
+	const s = newGame(3);
+	const host = s.players.find((p) => p.id === s.hostId);
+	const victim = s.players.find((p) => p.id !== s.hostId);
+	// buat rungkat + bekas anggota group
+	victim.bankrupt = true;
+	victim.money = 0;
+	victim.teamId = 'team:x';
+	victim.pos = 20;
+	requestJoin(s, { id: victim.id, name: victim.name });
+	assert.ok(s.joinRequests.some((r) => r.id === victim.id), 'masuk antrean minta main lagi');
+	approveJoin(s, host.id, victim.id);
+	assert.equal(victim.bankrupt, false, 'tidak rungkat lagi');
+	assert.equal(victim.money, START_MONEY, 'dapat modal awal');
+	assert.equal(victim.pos, 0, 'mulai dari GAJIAN');
+	assert.equal(victim.teamId, null, 'kembali main solo');
+	assert.ok(!s.joinRequests.some((r) => r.id === victim.id), 'antrean dibersihkan');
+});
+
+test('rungkat: pemain aktif tidak bisa minta main lagi', () => {
+	const s = newGame(2);
+	const active = s.players.find((p) => p.id !== s.hostId);
+	assert.throws(() => requestJoin(s, { id: active.id, name: active.name }), GameError);
 });

@@ -175,6 +175,19 @@ export function addPlayer(state, user) {
 	log(state, `${user.name} masuk room.`);
 }
 
+/** Hidupkan kembali pemain yang sudah rungkat: reset ke kondisi awal, modal START_MONEY, taruh di GAJIAN. */
+function reviveBankrupt(state, p) {
+	p.bankrupt = false;
+	p.money = START_MONEY;
+	p.pos = 0;
+	p.inJail = false;
+	p.jailTurns = 0;
+	p.jailFree = 0;
+	p.stocks = {};
+	p.usaha = null;
+	p.teamId = null; // kembali main sebagai pemain solo
+}
+
 export function removePlayer(state, userId) {
 	if (state.status !== 'lobby') fail('Tidak bisa keluar saat game berjalan — gunakan Rungkat.');
 	const idx = state.players.findIndex((p) => p.id === userId);
@@ -190,15 +203,17 @@ export function removePlayer(state, userId) {
 	}
 }
 
-/** Pemain baru minta gabung saat game sudah berjalan (perlu persetujuan host). */
+/** Pemain baru minta gabung — atau pemain rungkat minta main lagi — saat game berjalan (perlu persetujuan host). */
 export function requestJoin(state, user) {
 	if (state.status !== 'playing') fail('Permintaan gabung hanya saat game berjalan.');
-	if (playerById(state, user.id)) fail('Kamu sudah jadi pemain.');
-	if (state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
+	const existing = playerById(state, user.id);
+	if (existing && !existing.bankrupt) fail('Kamu sudah jadi pemain.');
+	// pemain baru butuh slot kosong; pemain rungkat sudah punya slot sendiri
+	if (!existing && state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
 	state.joinRequests ??= [];
 	if (state.joinRequests.some((r) => r.id === user.id)) return; // sudah antre
 	state.joinRequests.push({ id: user.id, name: user.name, avatar: user.avatar ?? null, at: Date.now() });
-	log(state, `✋ ${user.name} minta gabung di tengah permainan.`);
+	log(state, existing ? `✋ ${user.name} (rungkat) minta main lagi.` : `✋ ${user.name} minta gabung di tengah permainan.`);
 }
 
 function dropJoinRequest(state, userId) {
@@ -214,7 +229,14 @@ export function approveJoin(state, hostId, userId) {
 	if (state.status !== 'playing') fail('Game belum berjalan.');
 	const req = dropJoinRequest(state, userId);
 	if (!req) fail('Permintaan gabung tidak ada.');
-	if (playerById(state, req.id)) return;
+	const existing = playerById(state, req.id);
+	if (existing) {
+		// pemain rungkat main lagi: hidupkan kembali di slot yang sama
+		if (!existing.bankrupt) return;
+		reviveBankrupt(state, existing);
+		log(state, `✅ ${req.name} main lagi (disetujui host), dapat modal ${formatRp(START_MONEY)}.`);
+		return;
+	}
 	if (state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
 	const usedTokens = new Set(state.players.map((p) => p.token));
 	const usedColors = new Set(state.players.map((p) => p.color));
