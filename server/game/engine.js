@@ -68,6 +68,51 @@ const current = (state) => state.players[state.turn];
 const alive = (state) => state.players.filter((p) => !p.bankrupt);
 const groupTiles = (group) => TILES.filter((t) => t.group === group);
 
+// ---------- merger / group ----------
+// Dua pemain bisa merger jadi satu group (teamId sama): uang & aset jadi bersama.
+
+/** partner se-group dari p (atau null kalau solo) */
+function teammateOf(state, p) {
+	if (!p?.teamId) return null;
+	return state.players.find((x) => x.id !== p.id && x.teamId === p.teamId) ?? null;
+}
+/** semua anggota group p (termasuk p); array berisi 1 kalau solo */
+function teamMembers(state, p) {
+	if (!p?.teamId) return [p];
+	return state.players.filter((x) => x.teamId === p.teamId);
+}
+/** apakah idA & idB satu group (id berbeda, teamId sama & terisi) */
+function sameTeam(state, idA, idB) {
+	if (!idA || !idB || idA === idB) return false;
+	const a = playerById(state, idA);
+	const b = playerById(state, idB);
+	return !!a?.teamId && a.teamId === b?.teamId;
+}
+/** id se-group dengan ownerId (termasuk ownerId) — dipakai untuk kepemilikan bersama */
+function teamOwnerIds(state, ownerId) {
+	const o = playerById(state, ownerId);
+	if (!o?.teamId) return new Set([ownerId]);
+	return new Set(state.players.filter((x) => x.teamId === o.teamId).map((x) => x.id));
+}
+
+// Kas bersama disimpan di satu objek (holder = anggota dengan id terkecil) agar tak
+// dobel-hitung; saldo anggota lain di-mirror lewat syncTeams untuk tampilan client.
+function holder(state, p) {
+	const m = teammateOf(state, p);
+	return m && m.id < p.id ? m : p;
+}
+const money = (state, p) => holder(state, p).money;
+const addMoney = (state, p, delta) => {
+	holder(state, p).money += delta;
+};
+/** cerminkan kas bersama ke kedua kartu anggota group (dipanggil sebelum broadcast) */
+function syncTeams(state) {
+	for (const p of state.players) {
+		const h = holder(state, p);
+		if (h !== p) p.money = h.money;
+	}
+}
+
 export function createGame(code, host, opts = {}) {
 	const state = {
 		code,
@@ -124,6 +169,7 @@ export function addPlayer(state, user) {
 		jailFree: 0,
 		stocks: {},
 		usaha: null,
+		teamId: null,
 		bankrupt: false
 	});
 	log(state, `${user.name} masuk room.`);
@@ -185,6 +231,7 @@ export function approveJoin(state, hostId, userId) {
 		jailFree: 0,
 		stocks: {},
 		usaha: null,
+		teamId: null,
 		bankrupt: false
 	});
 	log(state, `✅ ${req.name} bergabung di tengah permainan (disetujui host), dapat modal ${formatRp(START_MONEY)}.`);
@@ -221,10 +268,10 @@ export function startGame(state, rng = Math.random) {
 /** bayar ke pemain lain (toId) atau ke Kas Negara (toId = null) */
 function pay(state, p, amount, toId = null) {
 	if (amount <= 0) return;
-	p.money -= amount;
+	addMoney(state, p, -amount);
 	if (toId) {
 		const to = playerById(state, toId);
-		to.money += amount;
+		addMoney(state, to, amount);
 	} else {
 		state.kasNegara += amount;
 	}
@@ -234,7 +281,7 @@ function pay(state, p, amount, toId = null) {
 
 function collectSalary(state, p) {
 	const { sawit, bonus, amount } = salaryFor(state.tiles, p.id);
-	p.money += amount;
+	addMoney(state, p, amount);
 	p.laps = (p.laps ?? 0) + 1;
 	log(
 		state,
@@ -242,7 +289,7 @@ function collectSalary(state, p) {
 	);
 	const u = usahaById(p.usaha);
 	if (u?.income) {
-		p.money += u.income;
+		addMoney(state, p, u.income);
 		log(state, `${u.emoji} ${p.name} dapat setoran usaha ${u.name} ${formatRp(u.income)}.`);
 	}
 }
@@ -271,11 +318,13 @@ function sendToJail(state, p) {
 // ---------- sewa ----------
 
 function ownsGroup(state, ownerId, group) {
-	return groupTiles(group).every((t) => state.tiles[t.i]?.owner === ownerId);
+	const ids = teamOwnerIds(state, ownerId);
+	return groupTiles(group).every((t) => ids.has(state.tiles[t.i]?.owner));
 }
 
 function countOwned(state, ownerId, type) {
-	return TILES.filter((t) => t.type === type && state.tiles[t.i]?.owner === ownerId).length;
+	const ids = teamOwnerIds(state, ownerId);
+	return TILES.filter((t) => t.type === type && ids.has(state.tiles[t.i]?.owner)).length;
 }
 
 export function rentFor(state, tileIdx, diceTotal = 7) {
@@ -310,6 +359,10 @@ function landOn(state, p, rng, { rentMult = 1 } = {}) {
 				log(state, `${p.name} mampir ke ${tile.name} miliknya sendiri.`);
 				return;
 			}
+			if (sameTeam(state, p.id, own.owner)) {
+				log(state, `${p.name} mampir ke ${tile.name} milik se-group (${playerById(state, own.owner).name}) — bebas sewa.`);
+				return;
+			}
 			if (own.mortgaged) {
 				log(state, `${p.name} di ${tile.name} — sedang digadai, bebas sewa.`);
 				return;
@@ -341,7 +394,7 @@ function landOn(state, p, rng, { rentMult = 1 } = {}) {
 		case 'bansos':
 			if (state.kasNegara > 0) {
 				log(state, `${p.name} dapat bansos! Ambil seluruh Kas Negara ${formatRp(state.kasNegara)} 🏛️`);
-				p.money += state.kasNegara;
+				addMoney(state, p, state.kasNegara);
 				state.kasNegara = 0;
 			} else {
 				log(state, `${p.name} antre bansos... tapi Kas Negara kosong.`);
@@ -418,7 +471,7 @@ function drawCard(state, p, deck, rng) {
 	}
 	state.decks[deck].push(idx);
 
-	if (fx.money > 0) p.money += fx.money;
+	if (fx.money > 0) addMoney(state, p, fx.money);
 	if (fx.money < 0) pay(state, p, -fx.money);
 	if (fx.usahaHit) {
 		const u = usahaById(p.usaha);
@@ -490,7 +543,7 @@ function afterResolve(state) {
 
 function doRoll(state, p, rng) {
 	if (state.phase !== 'roll') fail('Belum saatnya lempar dadu.');
-	if (p.money < 0) fail('Lunasi utang dulu (jual rumah / gadai) sebelum lempar dadu.');
+	if (money(state, p) < 0) fail('Lunasi utang dulu (jual rumah / gadai) sebelum lempar dadu.');
 	const d = [1 + Math.floor(rng() * 6), 1 + Math.floor(rng() * 6)];
 	const isDouble = d[0] === d[1];
 	state.dice = d;
@@ -629,6 +682,65 @@ export function expireKick(state, now = Date.now()) {
 	return state.kickVote !== k;
 }
 
+// ---------- merger (ajak & setujui) ----------
+
+export const MERGE_TIMEOUT_MS = 45_000;
+
+function mergeInvite(state, userId, targetId) {
+	const p = requireActive(state, userId);
+	const target = playerById(state, targetId);
+	if (!target || target.bankrupt) fail('Pemain itu sudah tidak aktif.');
+	if (target.id === p.id) fail('Tidak bisa merger dengan diri sendiri.');
+	if (p.teamId) fail('Kamu sudah punya group.');
+	if (target.teamId) fail(`${target.name} sudah punya group.`);
+	if (state.mergeOffer) fail('Masih ada ajakan merger yang berjalan.');
+	state.mergeOffer = { from: p.id, fromName: p.name, to: target.id, toName: target.name, deadline: Date.now() + MERGE_TIMEOUT_MS };
+	log(state, `🤝 ${p.name} mengajak ${target.name} merger jadi satu group.`);
+}
+
+function mergeAccept(state, userId) {
+	const o = state.mergeOffer;
+	if (!o) fail('Tidak ada ajakan merger.');
+	if (o.to !== userId) fail('Ini bukan ajakan untukmu.');
+	const a = playerById(state, o.from);
+	const b = playerById(state, o.to);
+	state.mergeOffer = null;
+	if (!a || a.bankrupt || !b || b.bankrupt) fail('Ajakan merger tidak berlaku lagi.');
+	if (a.teamId || b.teamId) fail('Salah satu sudah punya group.');
+	const teamId = `team:${a.id}`;
+	a.teamId = teamId;
+	b.teamId = teamId;
+	// kas digabung jadi kas bersama (disimpan di holder, anggota lain di-mirror)
+	const pool = a.money + b.money;
+	const h = holder(state, a);
+	h.money = pool;
+	syncTeams(state);
+	log(state, `🤝 ${a.name} & ${b.name} merger jadi satu group! Kas bersama ${formatRp(pool)}.`);
+}
+
+function mergeReject(state, userId) {
+	const o = state.mergeOffer;
+	if (!o) fail('Tidak ada ajakan merger.');
+	if (o.to !== userId && o.from !== userId) fail('Kamu tidak terkait ajakan ini.');
+	state.mergeOffer = null;
+	log(state, o.to === userId ? `🙅 ${o.toName} menolak ajakan merger ${o.fromName}.` : `🙅 ${o.fromName} membatalkan ajakan merger.`);
+}
+
+/** dipanggil server tiap detik: ajakan merger kadaluarsa. true kalau state berubah. */
+export function expireMerge(state, now = Date.now()) {
+	const o = state.mergeOffer;
+	if (!o) return false;
+	// batalkan juga kalau salah satu sudah tidak aktif
+	const a = playerById(state, o.from);
+	const b = playerById(state, o.to);
+	if (now >= o.deadline || !a || a.bankrupt || !b || b.bankrupt) {
+		state.mergeOffer = null;
+		if (now >= o.deadline) log(state, `🤝 Ajakan merger ${o.fromName} → ${o.toName} habis waktu.`);
+		return true;
+	}
+	return false;
+}
+
 // ---------- iklan properti (Pasang Iklan) ----------
 
 const AD_MS = AD_SECONDS * 1000;
@@ -643,7 +755,7 @@ function placeAd(state, userId, tileIdx) {
 	if (!tile || tile.type !== 'property') fail('Hanya properti yang bisa diiklankan.');
 	if (!own || own.owner !== userId) fail('Kamu hanya bisa mengiklankan propertimu sendiri.');
 	const cost = adCost(tile);
-	if (p.money < cost) fail(`Uang kurang, biaya iklan ${formatRp(cost)}.`);
+	if (money(state, p) < cost) fail(`Uang kurang, biaya iklan ${formatRp(cost)}.`);
 	pay(state, p, cost); // -> Kas Negara
 	p.adTurn = state.turnCount;
 	state.seq += 1;
@@ -656,7 +768,7 @@ function skipAd(state, userId) {
 	const p = requireActive(state, userId);
 	if (!state.ad) fail('Tidak ada iklan yang tayang.');
 	if (userId === state.ad.by || state.ad.skipped.includes(userId)) return;
-	if (p.money < AD_SKIP_COST) fail(`Uang kurang untuk skip iklan (${formatRp(AD_SKIP_COST)}).`);
+	if (money(state, p) < AD_SKIP_COST) fail(`Uang kurang untuk skip iklan (${formatRp(AD_SKIP_COST)}).`);
 	pay(state, p, AD_SKIP_COST); // -> Kas Negara
 	state.ad.skipped.push(userId);
 	state.seq += 1;
@@ -679,7 +791,9 @@ function rentCreditor(state, payer) {
 	const own = r && state.tiles[r.tile];
 	if (!own || own.mortgaged) return null;
 	const owner = playerById(state, own.owner);
-	return owner && !owner.bankrupt && owner.id !== payer.id ? owner : null;
+	if (!owner || owner.bankrupt || owner.id === payer.id) return null;
+	if (sameTeam(state, payer.id, owner.id)) return null; // se-group: tak saling bayar sewa
+	return owner;
 }
 
 function payRent(state, p) {
@@ -692,8 +806,8 @@ function payRent(state, p) {
 		log(state, `Sewa ${tile.name} batal (pemilik berubah/digadai).`);
 		return afterResolve(state);
 	}
-	if (p.money < r.amount)
-		fail(`Uang kurang ${formatRp(r.amount - p.money)}. Jual rumah, gadai/jual aset, jual saham, atau menyerah.`);
+	if (money(state, p) < r.amount)
+		fail(`Uang kurang ${formatRp(r.amount - money(state, p))}. Jual rumah, gadai/jual aset, jual saham, atau menyerah.`);
 	state.pendingRent = null;
 	if (owner.inJail) {
 		pay(state, p, r.amount);
@@ -712,49 +826,64 @@ function payRent(state, p) {
 function surrender(state, p) {
 	const plan = surrenderPlan(state, p);
 	if (plan.outcome !== 'lanjut') return goBankrupt(state, p);
+	// aset se-group dijual bersama; kas bersama dipakai menutup tagihan
+	const members = teamMembers(state, p);
+	const ids = new Set(members.map((m) => m.id));
+	const grouped = members.length > 1;
 	const proceeds = plan.properties + plan.buildings + plan.stocks;
-	cleanMarketFor(state, p.id);
-	for (const [i, t] of Object.entries(state.tiles)) if (t.owner === p.id) delete state.tiles[i];
-	p.stocks = {};
-	p.money += proceeds;
+	for (const m of members) cleanMarketFor(state, m.id);
+	for (const [i, t] of Object.entries(state.tiles)) if (ids.has(t.owner)) delete state.tiles[i];
+	for (const m of members) m.stocks = {};
+	addMoney(state, p, proceeds);
 	const creditor = plan.creditorId ? playerById(state, plan.creditorId) : null;
 	if (plan.rent > 0) {
 		const r = state.pendingRent;
 		state.pendingRent = null;
-		p.money -= plan.rent;
-		if (creditor && !creditor.inJail) creditor.money += plan.rent;
+		addMoney(state, p, -plan.rent);
+		if (creditor && !creditor.inJail) addMoney(state, creditor, plan.rent);
 		else state.kasNegara += plan.rent;
 		log(state, `${p.name} bayar sewa ${formatRp(plan.rent)} di ${TILES[r.tile].name}${creditor ? ` ke ${creditor.name}` : ''}.`);
 	}
 	log(
 		state,
-		`🏳️ ${p.name} menyerah: semua aset dijual otomatis (${formatRp(proceeds)}). Sisa saldo ${formatRp(p.money)}, lanjut main tanpa aset.`
+		`🏳️ ${p.name}${grouped ? ' & group-nya' : ''} menyerah: semua aset dijual otomatis (${formatRp(proceeds)}). Sisa kas ${formatRp(money(state, p))}, lanjut main tanpa aset.`
 	);
 	if (state.phase === 'rent') afterResolve(state);
 }
 
 function goBankrupt(state, p) {
-	p.bankrupt = true;
-	const wasCurrent = current(state).id === p.id;
+	// bangkrut sehidup-semati: seluruh anggota group ikut bangkrut
+	const members = teamMembers(state, p);
+	const ids = new Set(members.map((m) => m.id));
+	const grouped = members.length > 1;
+	const names = members.map((m) => m.name).join(' & ');
+	const wasCurrent = ids.has(current(state).id);
 	// menyerah saat ditagih sewa: semua aset sisa jatuh ke pemilik yang menagih, bukan ke bank
-	const creditor = wasCurrent && state.phase === 'rent' ? rentCreditor(state, p) : null;
-	cleanMarketFor(state, p.id);
-	if (creditor) {
+	const creditor = wasCurrent && state.phase === 'rent' ? rentCreditor(state, current(state)) : null;
+	for (const m of members) {
+		m.bankrupt = true;
+		cleanMarketFor(state, m.id);
+	}
+	if (creditor && !ids.has(creditor.id)) {
 		let n = 0;
 		for (const t of Object.values(state.tiles)) {
-			if (t.owner !== p.id) continue;
+			if (!ids.has(t.owner)) continue;
 			t.owner = creditor.id;
 			n += 1;
 		}
-		if (p.money > 0) creditor.money += p.money;
-		p.money = 0;
-		log(state, `💸 ${p.name} menyerah! ${n} asetnya jadi milik ${creditor.name}.`);
+		const cash = money(state, p);
+		if (cash > 0) addMoney(state, creditor, cash);
+		for (const m of members) m.money = 0;
+		log(state, `💸 ${names} menyerah! ${n} aset${grouped ? ' group' : 'nya'} jadi milik ${creditor.name}.`);
 	} else {
-		for (const [i, t] of Object.entries(state.tiles)) if (t.owner === p.id) delete state.tiles[i];
-		log(state, `💸 ${p.name} rungkat! Semua asetnya disita bank.`);
+		for (const [i, t] of Object.entries(state.tiles)) if (ids.has(t.owner)) delete state.tiles[i];
+		for (const m of members) m.money = 0;
+		log(state, `💸 ${names} rungkat! Semua aset${grouped ? ' group' : 'nya'} disita bank.`);
 	}
-	p.stocks = {};
-	p.jailFree = 0;
+	for (const m of members) {
+		m.stocks = {};
+		m.jailFree = 0;
+	}
 	if (state.pendingRent && !state.tiles[state.pendingRent.tile] && !wasCurrent) {
 		state.pendingRent = null;
 		if (state.phase === 'rent') afterResolve(state);
@@ -818,7 +947,8 @@ function requireOwner(state, userId, tileIdx) {
 	const tile = TILES[tileIdx];
 	if (!tile || !isOwnable(tile)) fail('Petak ini tidak bisa dimiliki.');
 	const own = state.tiles[tileIdx];
-	if (!own || own.owner !== userId) fail(`${tile.name} bukan milikmu.`);
+	// aset se-group dianggap milik bersama: anggota group boleh kelola
+	if (!own || (own.owner !== userId && !sameTeam(state, userId, own.owner))) fail(`${tile.name} bukan milikmu.`);
 	return { p, tile, own };
 }
 
@@ -835,8 +965,8 @@ function build(state, userId, tileIdx) {
 	if (open.some((t) => state.tiles[t.i].level < own.level))
 		fail('Bangun merata dulu di kota lain dalam grup ini.');
 	const cost = buildCost(GROUPS[tile.group].houseCost, own.level + 1);
-	if (p.money < cost) fail(`Uang kurang, butuh ${formatRp(cost)}.`);
-	p.money -= cost;
+	if (money(state, p) < cost) fail(`Uang kurang, butuh ${formatRp(cost)}.`);
+	addMoney(state, p, -cost);
 	own.level += 1;
 	for (const t of groupTiles(tile.group)) dropListing(state, t.i);
 	log(state, `${p.name} bangun ${HOUSE_LEVELS[own.level].name} di ${tile.name} (${formatRp(cost)}).`);
@@ -851,7 +981,7 @@ function sell(state, userId, tileIdx) {
 	const refund = buildCost(GROUPS[tile.group].houseCost, own.level) / 2;
 	const from = HOUSE_LEVELS[own.level].name;
 	own.level -= 1;
-	p.money += refund;
+	addMoney(state, p, refund);
 	log(state, `${p.name} jual ${from} di ${tile.name}, terima ${formatRp(refund)}.`);
 }
 
@@ -866,7 +996,7 @@ function mortgage(state, userId, tileIdx) {
 		state.pendingRent = null;
 		afterResolve(state);
 	}
-	p.money += tile.price / 2;
+	addMoney(state, p, tile.price / 2);
 	log(state, `${p.name} gadai ${tile.name} ke Pegadaian, terima ${formatRp(tile.price / 2)}.`);
 }
 
@@ -876,8 +1006,8 @@ function unmortgage(state, userId, tileIdx) {
 	const { p, tile, own } = requireOwner(state, userId, tileIdx);
 	if (!own.mortgaged) fail('Tidak sedang digadai.');
 	const cost = redeemCost(tile);
-	if (p.money < cost) fail(`Uang kurang, butuh ${formatRp(cost)}.`);
-	p.money -= cost;
+	if (money(state, p) < cost) fail(`Uang kurang, butuh ${formatRp(cost)}.`);
+	addMoney(state, p, -cost);
 	own.mortgaged = false;
 	log(state, `${p.name} tebus ${tile.name} dari Pegadaian (${formatRp(cost)}).`);
 }
@@ -946,8 +1076,8 @@ function buildUsaha(state, userId, id) {
 	if (p.usaha) fail('Kamu sudah punya usaha — cuma boleh satu.');
 	const u = usahaById(id);
 	if (!u) fail('Usaha tidak dikenal.');
-	if (p.money < u.cost) fail(`Modal kurang, butuh ${formatRp(u.cost)}.`);
-	p.money -= u.cost;
+	if (money(state, p) < u.cost) fail(`Modal kurang, butuh ${formatRp(u.cost)}.`);
+	addMoney(state, p, -u.cost);
 	p.usaha = u.id;
 	log(state, `${u.emoji} ${p.name} buka usaha ${u.name}${u.cost ? ` (modal ${formatRp(u.cost)})` : ' (tanpa modal)'}. Setoran ${formatRp(u.income)}/gajian.`);
 }
@@ -970,8 +1100,8 @@ function stockBuy(state, userId, sym, qty) {
 	const n = parseQty(qty);
 	const price = stocksOf(state)[def.sym].price;
 	const total = price * n;
-	if (p.money < total) fail(`Uang kurang, butuh ${formatRp(total)}.`);
-	p.money -= total;
+	if (money(state, p) < total) fail(`Uang kurang, butuh ${formatRp(total)}.`);
+	addMoney(state, p, -total);
 	p.stocks ??= {};
 	const h = (p.stocks[def.sym] ??= { qty: 0, cost: 0 });
 	h.qty += n;
@@ -991,7 +1121,7 @@ function stockSell(state, userId, sym, qty) {
 	h.qty -= n;
 	h.cost -= costPart;
 	if (h.qty === 0) delete p.stocks[def.sym];
-	p.money += total;
+	addMoney(state, p, total);
 	const gain = total - costPart;
 	log(state, `📊 ${p.name} jual ${n} lot ${def.sym} @ ${formatRp(price)} (${gain >= 0 ? 'untung' : 'rugi'} ${formatRp(Math.abs(gain))}).`);
 }
@@ -1031,10 +1161,10 @@ function judol(state, userId, amount, rng) {
 	const p = requireActive(state, userId);
 	const bet = Math.floor(Number(amount));
 	if (!Number.isFinite(bet) || bet < 1) fail('Taruhan minimal Rp 1 jt.');
-	if (bet > p.money) fail(`Saldo kurang, taruhan maksimal ${formatRp(Math.max(0, p.money))}.`);
+	if (bet > money(state, p)) fail(`Saldo kurang, taruhan maksimal ${formatRp(Math.max(0, money(state, p)))}.`);
 	const pct = Math.round((rng() * 2 - 1) * 100);
 	const delta = Math.round((bet * pct) / 100);
-	p.money += delta;
+	addMoney(state, p, delta);
 	// bandar judod sebagai lawan main: pemain menang -> saldo bandar berkurang; pemain kalah -> bertambah
 	state.bandarJudod = (state.bandarJudod ?? 0) - delta;
 	// catat kekalahan judod beruntun (menang/impas = reset) untuk efek layar pemain
@@ -1095,7 +1225,8 @@ function requireListing(state, tileIdx) {
 		return { l, own: null, tile: null };
 	}
 	const own = state.tiles[tileIdx];
-	if (!own || own.owner !== l.seller) {
+	// aset se-group: anggota mana pun boleh jadi penjual (kepemilikan bersama)
+	if (!own || (own.owner !== l.seller && !sameTeam(state, own.owner, l.seller))) {
 		dropListing(state, tileIdx);
 		fail('Penjual sudah tidak memiliki aset ini.');
 	}
@@ -1176,9 +1307,10 @@ function completeSale(state, tileIdx, buyer, price, how) {
 		const { l } = requireListing(state, tileIdx);
 		const seller = playerById(state, l.seller);
 		if (buyer.id === seller.id) fail('Tidak bisa beli kartumu sendiri.');
-		if (buyer.money < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
-		buyer.money -= price;
-		seller.money += price;
+		if (sameTeam(state, buyer.id, seller.id)) fail('Se-group tak perlu beli dari partner — kartu & uang sudah bersama.');
+		if (money(state, buyer) < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
+		addMoney(state, buyer, -price);
+		addMoney(state, seller, price);
 		seller.jailFree -= 1;
 		buyer.jailFree += 1;
 		dropListing(state, tileIdx);
@@ -1190,11 +1322,12 @@ function completeSale(state, tileIdx, buyer, price, how) {
 		const { l } = requireListing(state, tileIdx);
 		const seller = playerById(state, l.seller);
 		if (buyer.id === seller.id) fail('Tidak bisa beli usahamu sendiri.');
+		if (sameTeam(state, buyer.id, seller.id)) fail('Se-group tak perlu beli dari partner — usaha & uang sudah bersama.');
 		if (buyer.usaha) fail('Kamu sudah punya usaha — cuma boleh satu.');
-		if (buyer.money < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
+		if (money(state, buyer) < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
 		const u = usahaById(l.usaha);
-		buyer.money -= price;
-		seller.money += price;
+		addMoney(state, buyer, -price);
+		addMoney(state, seller, price);
 		seller.usaha = null;
 		buyer.usaha = l.usaha;
 		dropListing(state, tileIdx);
@@ -1211,9 +1344,10 @@ function completeSale(state, tileIdx, buyer, price, how) {
 		throw e;
 	}
 	if (buyer.id === seller.id) fail('Tidak bisa beli asetmu sendiri.');
-	if (buyer.money < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
-	buyer.money -= price;
-	seller.money += price;
+	if (sameTeam(state, buyer.id, seller.id)) fail('Se-group tak perlu beli dari partner — aset & uang sudah bersama.');
+	if (money(state, buyer) < price) fail(`Uang kurang, butuh ${formatRp(price)}.`);
+	addMoney(state, buyer, -price);
+	addMoney(state, seller, price);
 	own.owner = buyer.id;
 	dropListing(state, tileIdx);
 	mkEvent(state, 'sold', tileIdx, buyer.id, seller.id, price, { from: seller.id, to: buyer.id });
@@ -1334,6 +1468,7 @@ export function applyAction(state, userId, action, rng = Math.random) {
 	try {
 		return dispatch(state, userId, action, rng);
 	} finally {
+		syncTeams(state);
 		checkWinner(state);
 	}
 }
@@ -1360,8 +1495,8 @@ function dispatch(state, userId, action, rng) {
 			const p = requireTurn(state, userId);
 			if (state.phase !== 'buy') fail('Tidak ada properti untuk dibeli.');
 			const tile = TILES[state.pendingBuy];
-			if (p.money < tile.price) fail(`Uang kurang, butuh ${formatRp(tile.price)}.`);
-			p.money -= tile.price;
+			if (money(state, p) < tile.price) fail(`Uang kurang, butuh ${formatRp(tile.price)}.`);
+			addMoney(state, p, -tile.price);
 			state.tiles[tile.i] = { owner: p.id, level: 0, mortgaged: false };
 			log(state, `${p.name} beli ${tile.name} seharga ${formatRp(tile.price)}. 📜`);
 			state.pendingBuy = null;
@@ -1398,6 +1533,13 @@ function dispatch(state, userId, action, rng) {
 			return;
 		}
 
+		case 'mergeInvite':
+			return mergeInvite(state, userId, action.target);
+		case 'mergeAccept':
+			return mergeAccept(state, userId);
+		case 'mergeReject':
+			return mergeReject(state, userId);
+
 		case 'payRent':
 			return payRent(state, requireTurn(state, userId));
 
@@ -1412,7 +1554,7 @@ function dispatch(state, userId, action, rng) {
 		case 'payJail': {
 			const p = requireTurn(state, userId);
 			if (!p.inJail || state.phase !== 'roll') fail('Kamu tidak di Ruang Sidang.');
-			if (p.money < JAIL_FINE) fail('Uang tidak cukup untuk denda.');
+			if (money(state, p) < JAIL_FINE) fail('Uang tidak cukup untuk denda.');
 			pay(state, p, JAIL_FINE);
 			p.inJail = false;
 			p.jailTurns = 0;
@@ -1436,7 +1578,7 @@ function dispatch(state, userId, action, rng) {
 		case 'endTurn': {
 			const p = requireTurn(state, userId);
 			if (state.phase !== 'end') fail('Selesaikan aksimu dulu.');
-			if (p.money < 0) fail('Saldo minus! Jual rumah, gadai properti, atau nyatakan rungkat.');
+			if (money(state, p) < 0) fail('Saldo minus! Jual rumah, gadai properti, atau nyatakan rungkat.');
 			return nextTurn(state);
 		}
 
@@ -1560,12 +1702,13 @@ export function forceSkip(state, byUserId) {
 		}
 		if (state.phase === 'rent') return goBankrupt(state, p);
 	}
-	if (p.money < 0) return goBankrupt(state, p);
+	if (money(state, p) < 0) return goBankrupt(state, p);
 	nextTurn(state);
 }
 
 /** State untuk dikirim ke client (tanpa urutan deck). */
 export function publicState(state) {
+	syncTeams(state); // pastikan kas bersama tercermin di kedua kartu anggota group
 	const { decks, ...rest } = state;
 	return { ...rest, deckSizes: { musibah: decks.musibah.length, takdir: decks.takdir.length } };
 }

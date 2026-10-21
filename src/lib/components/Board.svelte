@@ -138,10 +138,16 @@
 			if (!owner || owner.bankrupt) continue;
 			const t = TILES[+k];
 			const e = edge(+k);
-			// satu grup warna milik pemain yang sama = satu penanda, walau petaknya menyeberang pojok (beda sisi)
-			const key = `${owner.id}|${t.group ?? t.type}`;
-			const g = groups.get(key) ?? { owner, key, tiles: [] };
-			g.tiles.push({ i: +k, ...e, mortgaged: !!own.mortgaged });
+			// satu grup warna milik pemain / group yang sama = satu penanda (menyeberang pojok pun tetap satu).
+			// Anggota se-group (teamId sama) berbagi satu penanda → avatar mini bisa 2.
+			const teamKey = owner.teamId ?? owner.id;
+			const key = `${teamKey}|${t.group ?? t.type}`;
+			const g = groups.get(key) ?? { owner, key, owners: [], ownerIds: new Set(), tiles: [] };
+			if (!g.ownerIds.has(owner.id)) {
+				g.ownerIds.add(owner.id);
+				g.owners.push(owner);
+			}
+			g.tiles.push({ i: +k, owner, ...e, mortgaged: !!own.mortgaged });
 			groups.set(key, g);
 		}
 		const all = [...groups.values()].map((g) => {
@@ -182,7 +188,7 @@
 				...g,
 				x: at[0],
 				y: at[1],
-				paths: g.tiles.map((t) => ({ i: t.i, mortgaged: t.mortgaged, d: arc(at, t.inner, t.m >= g.m ? 1 : -1), end: t.inner }))
+				paths: g.tiles.map((t) => ({ i: t.i, mortgaged: t.mortgaged, color: t.owner.color, d: arc(at, t.inner, t.m >= g.m ? 1 : -1), end: t.inner }))
 			};
 		});
 	});
@@ -290,14 +296,23 @@
 		{#each markers as g (g.key)}
 			{#each g.paths as t (t.i)}
 				<path d={t.d} class="under" vector-effect="non-scaling-stroke" />
-				<path d={t.d} style:stroke={g.owner.color} stroke-dasharray={t.mortgaged ? '3 2' : null} vector-effect="non-scaling-stroke" />
-				<circle cx={t.end[0]} cy={t.end[1]} r="0.6" style:fill={g.owner.color} class="dot" />
+				<path d={t.d} style:stroke={t.color} stroke-dasharray={t.mortgaged ? '3 2' : null} vector-effect="non-scaling-stroke" />
+				<circle cx={t.end[0]} cy={t.end[1]} r="0.6" style:fill={t.color} class="dot" />
 			{/each}
 		{/each}
 	</svg>
 	{#each markers as g (g.key)}
-		<span class="mava" style:left="{g.x}%" style:top="{pctY(g.y)}%" style:--c={g.owner.color} title={`Milik ${g.owner.name}${g.tiles.length > 1 ? ` (${g.tiles.length} aset)` : ''}`}>
-			<Avatar p={g.owner} />
+		<span
+			class="mava"
+			class:team={g.owners.length > 1}
+			style:left="{g.x}%"
+			style:top="{pctY(g.y)}%"
+			style:--c={g.owners[0].color}
+			title={`Milik ${g.owners.map((o) => o.name).join(' & ')}${g.owners.length > 1 ? ' (1 group)' : ''}${g.tiles.length > 1 ? ` · ${g.tiles.length} aset` : ''}`}
+		>
+			{#each g.owners as o (o.id)}
+				<span class="mava-face" style:--c={o.color}><Avatar p={o} /></span>
+			{/each}
 		</span>
 	{/each}
 </div>
@@ -334,17 +349,27 @@
 	}
 	.mava {
 		position: absolute;
-		width: 1.95%;
-		aspect-ratio: 1;
 		transform: translate(-50%, -50%);
+		z-index: 4;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+	}
+	.mava-face {
+		width: 1.95cqi;
+		height: 1.95cqi;
 		border-radius: 50%;
 		overflow: hidden;
 		border: max(1px, 0.2cqi) solid var(--c);
 		background: #fff;
 		box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 		font-size: 1cqi;
-		z-index: 4;
 		box-sizing: border-box;
+		flex: none;
+	}
+	/* anggota se-group: dua avatar mini saling tumpuk sedikit */
+	.mava.team .mava-face:not(:first-child) {
+		margin-left: -0.5cqi;
 	}
 	.board {
 		position: relative;

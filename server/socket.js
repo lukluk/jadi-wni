@@ -15,6 +15,7 @@ import {
 	expireRent,
 	expireKick,
 	expireAd,
+	expireMerge,
 	knockoutTick,
 	publicState,
 	GameError
@@ -156,7 +157,7 @@ export function attachSocket(httpServer) {
 			try {
 				if (state.paused) continue; // jeda host: hentikan semua batas waktu
 				const hostHere = (presence.get(state.code)?.get(state.hostId) ?? 0) > 0;
-				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state) | knockoutTick(state) | expireAd(state)) {
+				if ((hostHere && maybeAddBot(state)) | expireRent(state) | expireKick(state) | knockoutTick(state) | expireAd(state) | expireMerge(state)) {
 					persist(state);
 					broadcast(io, state);
 				}

@@ -57,6 +57,8 @@
 	});
 
 	const king = $derived(richestId(game) === p.id);
+	// partner se-group (merger) kalau ada
+	const teammate = $derived(p.teamId ? game.players.find((x) => x.id !== p.id && x.teamId === p.teamId) ?? null : null);
 	const owned = $derived(Object.values(game.tiles).filter((t) => t.owner === p.id).length);
 	const status = $derived(
 		p.bankrupt
@@ -92,6 +94,7 @@
 			{#if isMe}<span class="tag">kamu</span>{/if}
 			{#if p.bot}<span class="tag">🤖 bot</span>{/if}
 			{#if isHost}<span class="tag">host</span>{/if}
+			{#if teammate}<span class="tag group" style:--tc={teammate.color} title={`Satu group dengan ${teammate.name} — uang & aset bersama`}>🤝 {teammate.name}</span>{/if}
 			{#if isHost && roomCode}<button class="code" onclick={onCopyCode} title="Kode room, klik untuk menyalin link undangan">{roomCode}</button>{/if}
 			{#if inVoice}<span class="mic" title="Ikut obrolan suara">{micMuted ? '🔇' : speaking ? '🔊' : '🎙️'}</span>{/if}
 			{#if inVoice && isMe}<button class="leave" onclick={() => onControl?.('leave')} title="Keluar dari suara & video" aria-label="Keluar dari suara dan video">Keluar</button>{/if}
@@ -248,6 +251,13 @@
 		color: #fff;
 		padding: 0 0.35rem;
 		border-radius: 4px;
+	}
+	.tag.group {
+		background: var(--tc, var(--ink));
+		max-width: 8rem;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
 	}
 	.status {
 		font-size: 0.82rem;

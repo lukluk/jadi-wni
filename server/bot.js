@@ -106,6 +106,11 @@ function develop(state, p) {
  */
 export function botStep(state) {
 	if (state.status !== 'playing') return false;
+	// bot menolak ajakan merger (biar tak menggantung sampai kadaluarsa), kapan pun gilirannya
+	if (state.mergeOffer) {
+		const target = state.players.find((x) => x.id === state.mergeOffer.to);
+		if (target?.bot) return tryAct(state, target.id, { type: 'mergeReject' });
+	}
 	const p = state.players[state.turn];
 	if (!p?.bot || p.bankrupt) return false;
 	const act = (a) => tryAct(state, p.id, a);

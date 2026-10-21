@@ -8,9 +8,10 @@ import {
 	GameError,
 	rentFor,
 	expireRent,
-	expireKick
+	expireKick,
+	expireMerge
 } from '../server/game/engine.js';
-import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, surrenderPlan, START_MONEY, STOCKS, usahaKey, netWorth } from '../src/lib/shared/board.js';
+import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, surrenderPlan, START_MONEY, STOCKS, usahaKey, netWorth, ownsGroup, WIN_NETWORTH } from '../src/lib/shared/board.js';
 
 function seeded(seed) {
 	return () => {
@@ -562,4 +563,123 @@ test('richestId: raja = kekayaan bersih tertinggi, tidak ada kalau seri', () => 
 	assert.equal(richestId(s), s.players[0].id);
 	s.players[0].bankrupt = true;
 	assert.equal(richestId(s), null);
+});
+
+// ---------- merger (2 pemain jadi 1 group) ----------
+
+/** bentuk group a+b lewat aksi ajak & setujui; kembalikan { a, b } */
+function mergeAB(s) {
+	const a = s.players.find((p) => p.id === 'a');
+	const b = s.players.find((p) => p.id === 'b');
+	applyAction(s, a.id, { type: 'mergeInvite', target: b.id });
+	applyAction(s, b.id, { type: 'mergeAccept' });
+	return { a, b };
+}
+
+test('merger: ajak & setujui menggabung kas jadi kas bersama', () => {
+	const s = newGame(2);
+	const a = s.players.find((p) => p.id === 'a');
+	const b = s.players.find((p) => p.id === 'b');
+	a.money = 1000;
+	b.money = 400;
+	mergeAB(s);
+	assert.ok(a.teamId && a.teamId === b.teamId, 'teamId kedua pemain sama');
+	assert.equal(a.money, 1400, 'kas bersama = gabungan');
+	assert.equal(b.money, 1400, 'kedua kartu menampilkan kas bersama');
+	// belanja oleh salah satu memotong kas bersama keduanya
+	s.tiles[1] = { owner: a.id, level: 0, mortgaged: false };
+	applyAction(s, a.id, { type: 'mortgage', tile: 1 }); // +price/2 ke kas bersama
+	assert.equal(a.money, b.money, 'kas tetap sinkron setelah transaksi');
+});
+
+test('merger: tidak saling kena sewa dengan anggota se-group', () => {
+	const s = newGame(2);
+	const { a, b } = mergeAB(s);
+	const before = a.money;
+	s.tiles[3] = { owner: a.id, level: 3, mortgaged: false }; // Bekasi, milik a
+	// giliran b, berdiri di petak 1, lempar [1,1] -> mendarat di petak 3 (milik partner)
+	s.turn = s.players.indexOf(b);
+	b.pos = 1;
+	s.phase = 'roll';
+	s.doubles = 0;
+	applyAction(s, b.id, { type: 'roll' }, () => 0);
+	assert.equal(b.pos, 3, 'mendarat di properti partner');
+	assert.equal(s.pendingRent, null, 'tidak ada tagihan sewa ke partner');
+	assert.equal(a.money, before, 'kas bersama tidak berubah');
+});
+
+test('merger: monopoli & bangun rumah di tanah partner (kepemilikan bersama)', () => {
+	const s = newGame(2);
+	const { a, b } = mergeAB(s);
+	a.money = b.money = 5000;
+	// grup coklat: Cikarang (1) milik a, Bekasi (3) milik b -> dikuasai group
+	s.tiles[1] = { owner: a.id, level: 0, mortgaged: false };
+	s.tiles[3] = { owner: b.id, level: 0, mortgaged: false };
+	assert.ok(ownsGroup(s, a.id, 'coklat'), 'group menguasai grup coklat bersama');
+	const before = a.money;
+	// a membangun di Bekasi (milik partner) -> boleh, bayar dari kas bersama
+	applyAction(s, a.id, { type: 'build', tile: 3 });
+	assert.equal(s.tiles[3].level, 1, 'rumah terbangun di tanah partner');
+	assert.equal(a.money, before - 50, 'biaya bangun dipotong kas bersama');
+	assert.equal(b.money, a.money, 'kas tetap sinkron');
+});
+
+test('merger: stasiun gabungan dihitung sebagai milik satu group', () => {
+	const s = newGame(2);
+	const { a, b } = mergeAB(s);
+	s.tiles[5] = { owner: a.id, level: 0, mortgaged: false }; // KRL
+	s.tiles[15] = { owner: b.id, level: 0, mortgaged: false }; // Transjakarta
+	// 2 stasiun gabungan -> sewa indeks ke-2 (STATION_RENT[2] = 50)
+	assert.equal(rentFor(s, 5), 50, 'sewa stasiun pakai jumlah stasiun gabungan group');
+});
+
+test('merger: kekayaan bersih digabung & menang bareng', () => {
+	const s = newGame(2);
+	const { a, b } = mergeAB(s);
+	a.money = b.money = 6000;
+	s.tiles[30] = { owner: b.id, level: 0, mortgaged: false }; // BSD (300)
+	const w = netWorth(s, a);
+	assert.equal(w, netWorth(s, b), 'netWorth sama di kedua anggota');
+	assert.equal(w, 6000 + 300, 'kas bersama dihitung sekali + aset partner');
+	// dorong melewati target menang, lalu satu aksi memicu checkWinner
+	a.money = b.money = WIN_NETWORTH + 100;
+	s.turn = s.players.indexOf(a);
+	s.phase = 'roll';
+	applyAction(s, a.id, { type: 'roll' }, () => 0.99);
+	assert.equal(s.status, 'ended', 'game selesai saat group tembus target');
+	assert.ok(s.winner === a.id || s.winner === b.id, 'pemenang anggota group');
+});
+
+test('merger: bangkrut sehidup-semati (satu kena, dua-duanya bangkrut)', () => {
+	const s = newGame(3);
+	const { a, b } = mergeAB(s);
+	const c = s.players.find((p) => p.id === 'c');
+	a.money = b.money = 100;
+	s.tiles[1] = { owner: c.id, level: 0, mortgaged: false };
+	// b sedang ditagih sewa besar milik c, kas bersama tak cukup & tak ada aset
+	s.turn = s.players.indexOf(b);
+	s.phase = 'rent';
+	s.pendingRent = { tile: 1, amount: 9999, deadline: Date.now() + 100000 };
+	applyAction(s, b.id, { type: 'bankrupt' });
+	assert.ok(a.bankrupt && b.bankrupt, 'kedua anggota group bangkrut bareng');
+	assert.equal(s.tiles[1].owner, c.id, 'aset penagih tetap miliknya');
+});
+
+test('merger: ajakan ditolak & kadaluarsa membersihkan tawaran', () => {
+	const s = newGame(2);
+	const a = s.players.find((p) => p.id === 'a');
+	const b = s.players.find((p) => p.id === 'b');
+	// ditolak
+	applyAction(s, a.id, { type: 'mergeInvite', target: b.id });
+	assert.ok(s.mergeOffer, 'ada ajakan berjalan');
+	applyAction(s, b.id, { type: 'mergeReject' });
+	assert.equal(s.mergeOffer, null, 'ajakan hilang setelah ditolak');
+	assert.ok(!a.teamId && !b.teamId, 'tak ada group terbentuk');
+	// kadaluarsa: lewat deadline -> expireMerge membersihkan tawaran
+	applyAction(s, a.id, { type: 'mergeInvite', target: b.id });
+	assert.equal(expireMerge(s, s.mergeOffer.deadline - 1), false, 'belum lewat deadline, tawaran tetap');
+	assert.ok(s.mergeOffer, 'ajakan masih ada sebelum deadline');
+	assert.equal(expireMerge(s, s.mergeOffer.deadline + 1), true, 'lewat deadline -> berubah');
+	assert.equal(s.mergeOffer, null, 'ajakan hilang setelah kadaluarsa');
+	assert.ok(!a.teamId && !b.teamId, 'tetap tak ada group terbentuk');
 });

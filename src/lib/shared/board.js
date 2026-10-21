@@ -42,9 +42,31 @@ export const investedCost = (houseCost, level) => {
 /** semua petak properti dalam satu grup */
 export const groupTilesOf = (group) => TILES.filter((t) => t.type === 'property' && t.group === group);
 
-/** pemain menguasai semua kota di grup (tak ada yang digadai dihitung terpisah) */
-export const ownsGroup = (state, playerId, group) =>
-	!!group && groupTilesOf(group).every((t) => state.tiles[t.i]?.owner === playerId);
+// ---------- merger / group ----------
+
+/** semua anggota group pemain ini (termasuk dia); 1 elemen kalau solo */
+export function teamMembersOf(state, playerId) {
+	const p = state.players?.find((x) => x.id === playerId);
+	if (!p) return [];
+	if (!p.teamId) return [p];
+	return state.players.filter((x) => x.teamId === p.teamId);
+}
+/** id se-group dengan playerId (termasuk playerId) — untuk kepemilikan bersama */
+export const teamOwnerIdsOf = (state, playerId) => new Set(teamMembersOf(state, playerId).map((x) => x.id));
+/** apakah dua id satu group */
+export function sameTeamOf(state, a, b) {
+	if (!a || !b || a === b) return false;
+	const pa = state.players?.find((x) => x.id === a);
+	const pb = state.players?.find((x) => x.id === b);
+	return !!pa?.teamId && pa.teamId === pb?.teamId;
+}
+
+/** pemain (atau group-nya) menguasai semua kota di grup */
+export const ownsGroup = (state, playerId, group) => {
+	if (!group) return false;
+	const ids = teamOwnerIdsOf(state, playerId);
+	return groupTilesOf(group).every((t) => ids.has(state.tiles[t.i]?.owner));
+};
 
 /**
  * Bisa bangun/upgrade di petak ini sekarang? Cermin aturan server (engine.build).
@@ -55,7 +77,8 @@ export function canBuild(state, playerId, tileIdx) {
 	const tile = TILES[tileIdx];
 	const own = state.tiles?.[tileIdx];
 	if (!tile || tile.type !== 'property' || !own) return null;
-	if (own.owner !== playerId || own.mortgaged) return null;
+	// aset se-group milik bersama: anggota group boleh membangun di tanah partner
+	if ((own.owner !== playerId && !sameTeamOf(state, own.owner, playerId)) || own.mortgaged) return null;
 	if (!ownsGroup(state, playerId, tile.group)) return null;
 	const gTiles = groupTilesOf(tile.group);
 	if (gTiles.some((t) => state.tiles[t.i]?.mortgaged)) return null;
@@ -365,17 +388,27 @@ export function stockValue(state, p) {
 	return total;
 }
 
-/** perkiraan total aset: uang + saham + properti (harga beli, separuh bila digadai) + modal bangunan */
+/**
+ * Perkiraan total aset: uang + saham + properti (harga beli, separuh bila digadai) + modal bangunan.
+ * Team-aware: untuk pemain ber-group, kembalikan kekayaan group (kas bersama dihitung sekali +
+ * saham, aset & usaha kedua anggota) — nilai sama ditampilkan di kedua kartu.
+ */
 export function netWorth(state, p) {
-	let total = p.money + stockValue(state, p);
+	const members = teamMembersOf(state, p.id);
+	const ids = new Set(members.map((m) => m.id));
+	// kas bersama di-mirror sama di tiap anggota, jadi dihitung sekali
+	let total = members[0]?.money ?? p.money;
+	for (const m of members) total += stockValue(state, m);
 	for (const [i, t] of Object.entries(state.tiles)) {
-		if (t.owner !== p.id) continue;
+		if (!ids.has(t.owner)) continue;
 		const tile = TILES[+i];
 		total += t.mortgaged ? tile.price / 2 : tile.price;
 		if (tile.type === 'property') total += investedCost(GROUPS[tile.group].houseCost, t.level);
 	}
-	const u = usahaById(p.usaha);
-	if (u) total += u.cost; // usaha dihitung aset senilai modal awal
+	for (const m of members) {
+		const u = usahaById(m.usaha);
+		if (u) total += u.cost; // usaha dihitung aset senilai modal awal
+	}
 	return total;
 }
 
@@ -425,27 +458,32 @@ export function playerTodos(state, playerId) {
  * Tanpa tagihan/utang sama sekali, menyerah = keluar dari game (bangkrut).
  */
 export function surrenderPlan(state, p) {
+	// team-aware: aset & saham dihitung untuk seluruh anggota group; kas bersama dihitung sekali
+	const members = teamMembersOf(state, p.id);
+	const ids = new Set(members.map((m) => m.id));
 	let properties = 0;
 	let buildings = 0;
 	for (const [i, t] of Object.entries(state.tiles)) {
-		if (t.owner !== p.id) continue;
+		if (!ids.has(t.owner)) continue;
 		const tile = TILES[+i];
 		properties += t.mortgaged ? tile.price / 2 : tile.price;
 		if (tile.type === 'property') for (let l = 1; l <= t.level; l++) buildings += buildCost(GROUPS[tile.group].houseCost, l) / 2;
 	}
-	const stocks = stockValue(state, p);
-	// tagihan sewa yang sedang menunggu (hanya kalau penagihnya masih ada)
+	let stocks = 0;
+	for (const m of members) stocks += stockValue(state, m);
+	const cash = members[0]?.money ?? p.money; // kas bersama (di-mirror sama)
+	// tagihan sewa yang sedang menunggu (hanya kalau penagihnya masih ada & bukan se-group)
 	const r = state.pendingRent;
 	const own = r && state.tiles[r.tile];
 	const creditor =
-		state.phase === 'rent' && state.players[state.turn]?.id === p.id && own && !own.mortgaged
-			? state.players.find((x) => x.id === own.owner && !x.bankrupt && x.id !== p.id)
+		state.phase === 'rent' && ids.has(state.players[state.turn]?.id) && own && !own.mortgaged
+			? state.players.find((x) => x.id === own.owner && !x.bankrupt && !ids.has(x.id))
 			: null;
 	const rent = creditor ? r.amount : 0;
-	const hasDebt = rent > 0 || p.money < 0;
-	const left = p.money + properties + buildings + stocks - rent;
+	const hasDebt = rent > 0 || cash < 0;
+	const left = cash + properties + buildings + stocks - rent;
 	return {
-		money: p.money,
+		money: cash,
 		properties,
 		buildings,
 		stocks,

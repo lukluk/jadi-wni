@@ -360,6 +360,28 @@
 		game?.status === 'playing' && !!myPlayer && !myPlayer.bankrupt && !kv && game.players.filter((x) => !x.bankrupt).length >= 3
 	);
 
+	// ---------- merger (ajak jadi 1 group) ----------
+	/** aku boleh mengajak pemain lain merger? (playing, aku aktif & belum punya group, tak ada ajakan berjalan) */
+	const canInviteMerge = $derived(
+		game?.status === 'playing' && !!myPlayer && !myPlayer.bankrupt && !myPlayer.teamId && !game.mergeOffer
+	);
+	/** partner se-group-ku (kalau sudah merger) */
+	const myTeammate = $derived(
+		myPlayer?.teamId ? game.players.find((x) => x.id !== myPlayer.id && x.teamId === myPlayer.teamId) ?? null : null
+	);
+	const mergeOffer = $derived(game?.mergeOffer ?? null);
+	/** ajakan merger yang ditujukan ke aku (perlu Setuju/Tolak) */
+	const mergeForMe = $derived(mergeOffer && me && mergeOffer.to === me.id ? mergeOffer : null);
+	/** ajakan merger yang aku ajukan (menunggu jawaban) */
+	const mergeMine = $derived(mergeOffer && me && mergeOffer.from === me.id ? mergeOffer : null);
+	const mergeLeft = $derived(mergeOffer ? Math.max(0, Math.ceil((mergeOffer.deadline - (nowMs + clockOffset)) / 1000)) : 0);
+	let lastMergeKey = '';
+	$effect(() => {
+		const key = mergeForMe ? `${mergeForMe.from}:${mergeForMe.deadline}` : '';
+		if (key && key !== lastMergeKey) play('offer');
+		lastMergeKey = key;
+	});
+
 	const showRent = $derived(!!rentInfo && myTurn && !rolling && !moving);
 
 	// aksi utama yang dipicu tombol Spasi (null = tidak ada aksi sekarang). Syaratnya menyamai tombol di layar.
@@ -934,6 +956,14 @@
 							onclick={() => confirmAct(`Ajukan voting untuk mengeluarkan ${p.name}? Butuh 70% pemain lain setuju.`, { type: 'kickStart', target: p.id })}
 						>🗳️</button>
 					{/if}
+					{#if canInviteMerge && p.id !== me?.id && !p.bankrupt && !p.teamId}
+						<button
+							class="merge-invite"
+							title={`Ajak ${p.name} merger jadi 1 group`}
+							aria-label={`Ajak ${p.name} merger jadi 1 group`}
+							onclick={() => confirmAct(`Ajak ${p.name} merger jadi 1 group? Uang & aset kalian jadi bersama, tak saling kena sewa, menang/bangkrut bareng.`, { type: 'mergeInvite', target: p.id })}
+						>🤝</button>
+					{/if}
 					</div>
 				{/each}
 			</div>
@@ -1040,6 +1070,25 @@
 		{:else}
 			<small>Kamu tidak ikut voting ini.</small>
 		{/if}
+	</div>
+{/if}
+
+{#if mergeForMe}
+	<div class="kick-pop merge-pop" role="alertdialog" aria-live="polite">
+		<strong>🤝 {mergeForMe.fromName} mengajak merger!</strong>
+		<small>Jadi 1 group: uang & aset bersama, tak saling kena sewa, menang/bangkrut bareng · sisa {mergeLeft} dtk</small>
+		<div class="kick-acts">
+			<button class="btn small primary" onclick={() => act({ type: 'mergeAccept' })}>🤝 Setuju merger</button>
+			<button class="btn small" onclick={() => act({ type: 'mergeReject' })}>Tolak</button>
+		</div>
+	</div>
+{:else if mergeMine}
+	<div class="kick-pop merge-pop" role="alertdialog" aria-live="polite">
+		<strong>🤝 Menunggu {mergeMine.toName}…</strong>
+		<small>Ajakan merger terkirim · sisa {mergeLeft} dtk</small>
+		<div class="kick-acts">
+			<button class="btn small" onclick={() => act({ type: 'mergeReject' })}>Batalkan</button>
+		</div>
 	</div>
 {/if}
 
@@ -1410,6 +1459,25 @@
 		font-size: 0.8rem;
 		cursor: pointer;
 		opacity: 0.85;
+	}
+	.merge-invite {
+		position: absolute;
+		top: -6px;
+		left: -6px;
+		width: 26px;
+		height: 26px;
+		font-size: 0.8rem;
+		cursor: pointer;
+		opacity: 0.85;
+		border: 2px solid var(--ink);
+		background: #fff;
+		border-radius: 50%;
+	}
+	.merge-invite:hover {
+		opacity: 1;
+	}
+	.merge-pop {
+		background: #e7f0ff;
 	}
 	.kick-pop {
 		position: fixed;
