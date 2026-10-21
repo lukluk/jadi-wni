@@ -119,7 +119,7 @@ export function createGame(code, host, opts = {}) {
 		hostId: host.id,
 		status: 'lobby',
 		createdAt: Date.now(),
-		knockout: !!opts.knockout,
+		knockout: false, // fitur Knock Out dimatikan
 		koNextAt: null,
 		koWarnUntil: null,
 		paused: false,
@@ -634,14 +634,16 @@ function checkWinner(state) {
 		if (rich) {
 			state.status = 'ended';
 			state.winner = rich.id;
-			log(state, `🏆 ${rich.name} tembus ${formatRp(WIN_NETWORTH)} dan jadi WNI paling sukses! Game selesai.`);
+			const who = teamMembers(state, rich).map((m) => m.name).join(' & ');
+			log(state, `🏆 ${who} tembus ${formatRp(WIN_NETWORTH)} dan jadi WNI paling sukses! Game selesai.`);
 			return;
 		}
 	}
 	if (state.status === 'playing' && left.length <= 1) {
 		state.status = 'ended';
 		state.winner = left[0]?.id ?? null;
-		log(state, `🏆 ${left[0]?.name ?? 'Tidak ada'} jadi WNI paling sukses! Game selesai.`);
+		const who = left[0] ? teamMembers(state, left[0]).map((m) => m.name).join(' & ') : 'Tidak ada';
+		log(state, `🏆 ${who} jadi WNI paling sukses! Game selesai.`);
 	}
 }
 
@@ -938,6 +940,8 @@ function koPoorest(state) {
  * @returns {boolean} true kalau state berubah (perlu broadcast)
  */
 export function knockoutTick(state, now = Date.now()) {
+	return false; // fitur Knock Out dimatikan
+	// eslint-disable-next-line no-unreachable
 	if (!state.knockout || state.status !== 'playing') return false;
 	const aliveCount = state.players.filter((p) => !p.bankrupt).length;
 	if (aliveCount <= 1) return false;
@@ -1685,9 +1689,10 @@ function dispatch(state, userId, action, rng) {
 				.sort((a, b) => b.w - a.w);
 			state.status = 'ended';
 			state.winner = ranked[0].p.id;
+			const who = teamMembers(state, ranked[0].p).map((m) => m.name).join(' & ');
 			log(
 				state,
-				`Host mengakhiri game. 🏆 ${ranked[0].p.name} menang dengan kekayaan ${formatRp(ranked[0].w)}.`
+				`Host mengakhiri game. 🏆 ${who} menang dengan kekayaan ${formatRp(ranked[0].w)}.`
 			);
 			return;
 		}

@@ -284,6 +284,9 @@
 	const myTurn = $derived(!!cur && cur.id === me?.id);
 	const curOnline = $derived(!!cur && game.online.includes(cur.id));
 	const winner = $derived(game?.winner ? game.players.find((p) => p.id === game.winner) : null);
+	// pemenang group: sebutkan dua nama (partner se-group ikut juara)
+	const winnerMate = $derived(winner?.teamId ? game.players.find((p) => p.id !== winner.id && p.teamId === winner.teamId) ?? null : null);
+	const winnerNames = $derived(winner ? (winnerMate ? `${winner.name} & ${winnerMate.name}` : winner.name) : '');
 	// koran kemenangan full-page: muncul sekali saat game berakhir ada pemenang
 	let winPaper = $state(false);
 	let winShownFor = $state(/** @type {string|null} */ (null));
@@ -301,7 +304,7 @@
 	const winWorth = $derived(winner ? netWorth(game, winner) : 0);
 	const winWaLink = $derived(
 		`https://wa.me/?text=${encodeURIComponent(
-			`🏆 ${winner?.name ?? 'Seseorang'} berhasil masuk jajaran ‘Sembilan Naga’ di Jadi WNI dengan kekayaan ${formatRp(winWorth)}! Ayo tantang dia: ${page.url.origin}`
+			`🏆 ${winnerNames || 'Seseorang'} berhasil masuk jajaran ‘Sembilan Naga’ di Jadi WNI dengan kekayaan ${formatRp(winWorth)}! Ayo tantang dia: ${page.url.origin}`
 		)}`
 	);
 	const todayLong = () =>
@@ -788,15 +791,6 @@
 				<p>Kamu menonton room ini.</p>
 			{/if}
 
-			{#if isHost}
-				<label class="ko-opt">
-					<input type="checkbox" checked={!!game.knockout} onchange={(e) => emit('room:knockout', { on: e.currentTarget.checked })} />
-					<span><b>☠️ Knock Out</b> — tiap 20 menit pemain termiskin tereliminasi (ada peringatan 3 menit untuk jual aset).</span>
-				</label>
-			{:else if game.knockout}
-				<p class="ko-note"><b>☠️ Mode Knock Out aktif.</b> Tiap 20 menit pemain termiskin tereliminasi — ada 3 menit untuk menyelamatkan diri.</p>
-			{/if}
-
 			<div class="lobby-actions">
 				{#if isHost}
 					<button class="btn primary" disabled={busy || game.players.length < MIN_PLAYERS} onclick={() => emit('game:start')}>
@@ -846,8 +840,8 @@
 
 						{#if game.status === 'ended'}
 							<div class="ended">
-								<h2>🏆 {winner?.name ?? '—'}</h2>
-								<p>Jadi WNI paling sukses.</p>
+								<h2>🏆 {winnerNames || '—'}</h2>
+								<p>{winnerMate ? 'Jadi WNI paling sukses — satu group!' : 'Jadi WNI paling sukses.'}</p>
 								<button class="btn primary" onclick={newRoom}>Main lagi (room baru)</button>
 							</div>
 						{:else if myTurn}
@@ -1275,7 +1269,7 @@
 {/if}
 
 {#if winPaper && winner}
-	{@const NAMA = winner.name.toUpperCase()}
+	{@const NAMA = winnerNames.toUpperCase()}
 	<div class="paper-backdrop" role="dialog" aria-modal="true" aria-label="Koran kemenangan" onclick={() => (winPaper = false)}>
 		<div class="newspaper" onclick={(e) => e.stopPropagation()}>
 			<button class="paper-x" onclick={() => (winPaper = false)} aria-label="Tutup">✕</button>
@@ -1292,8 +1286,8 @@
 			<div class="np-cols">
 				<div class="np-col">
 					<p class="np-lead">
-						<span class="np-drop">{winner.name.charAt(0).toUpperCase()}</span>{winner.name},
-						sosok misterius yang kini resmi sejajar dengan para konglomerat papan atas tanah air,
+						<span class="np-drop">{winner.name.charAt(0).toUpperCase()}</span>{winnerNames},
+						{winnerMate ? 'duo se-group yang' : 'sosok misterius yang'} kini resmi sejajar dengan para konglomerat papan atas tanah air,
 						<strong>telah berhasil masuk jajaran 9 naga</strong> setelah kekayaan bersihnya menembus
 						<strong>{formatRp(winWorth)}</strong>.
 					</p>
@@ -1325,10 +1319,11 @@
 						{:else}
 							<div class="np-photo" style:--c={winner.color}>
 								<span class="np-ava"><Avatar p={winner} /></span>
+								{#if winnerMate}<span class="np-ava np-ava2" style:--c={winnerMate.color}><Avatar p={winnerMate} /></span>{/if}
 								<span class="np-crown">👑</span>
 							</div>
 						{/if}
-						<figcaption>{winner.name} berjalan di antara para pengawal, menuju puncak daftar orang terkaya.</figcaption>
+						<figcaption>{winnerNames} berjalan di antara para pengawal, menuju puncak daftar orang terkaya.</figcaption>
 					</figure>
 					<h4>Gurita Bisnis Baru</h4>
 					<p>
@@ -1347,7 +1342,7 @@
 					<p class="np-cap">Kekayaan bersih menanjak tiap kuartal hingga tembus {formatRp(winWorth)}.</p>
 					<div class="np-divider"></div>
 					<p>
-						Redaksi mengucapkan selamat kepada <strong>{winner.name}</strong>. Hidup itu keras — untung
+						Redaksi mengucapkan selamat kepada <strong>{winnerNames}</strong>. Hidup itu keras — untung
 						ada teman (dan properti di mana-mana).
 					</p>
 				</div>
@@ -1561,34 +1556,6 @@
 		box-shadow: 4px 4px 0 var(--ink);
 		font-weight: 700;
 		font-size: 0.9rem;
-	}
-	.ko-opt {
-		display: flex;
-		align-items: flex-start;
-		gap: 0.5rem;
-		font-size: 0.86rem;
-		line-height: 1.35;
-		background: #fff3f2;
-		border: 2px solid var(--ink);
-		border-radius: var(--radius-s);
-		padding: 0.5rem 0.7rem;
-		cursor: pointer;
-	}
-	.ko-opt input {
-		margin-top: 0.15rem;
-		width: 1.1rem;
-		height: 1.1rem;
-		flex: none;
-		accent-color: var(--merah);
-	}
-	.ko-note {
-		margin: 0;
-		font-size: 0.86rem;
-		line-height: 1.35;
-		background: #fff3f2;
-		border: 2px solid var(--ink);
-		border-radius: var(--radius-s);
-		padding: 0.5rem 0.7rem;
 	}
 	.ko-pop {
 		position: fixed;
@@ -2791,11 +2758,18 @@
 	.np-photo {
 		position: relative;
 		height: 150px;
-		display: grid;
-		place-items: center;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 10px;
 		background: linear-gradient(135deg, #d9cfb4, #b9ad8c);
 		border: 1px solid #1a1712;
 		filter: grayscale(1) contrast(1.05);
+	}
+	/* pemenang group: dua avatar berdampingan, dikecilkan sedikit */
+	.np-photo:has(.np-ava2) .np-ava {
+		width: 74px;
+		height: 74px;
 	}
 	.np-ava {
 		width: 92px;
