@@ -215,6 +215,7 @@
 			class:corner={isCorner(t.i)}
 			class:mortgaged={own?.mortgaged}
 			class:pending={game.pendingBuy === t.i && !moving && !rolling}
+			data-tile={t.i}
 			style:grid-row={pos.row + 1}
 			style:grid-column={pos.col + 1}
 			onclick={() => onTile(t.i)}

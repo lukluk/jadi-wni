@@ -86,12 +86,16 @@ function develop(state, p) {
 			const val = price * h.qty;
 			if (h.qty > 0 && (val >= h.cost * 1.25 || val <= h.cost * 0.65) && act({ type: 'stockSell', sym, qty: h.qty })) return true;
 		}
-		// beli saham yang sedang murah (<= 5% di atas harga dasar) pakai ~35% kas bebas
+		// beli saham: "beli yang murah" — pilih rasio harga/dasar terendah selama belum kemahalan
+		// (<= 1,25x harga dasar), pakai ~35% kas bebas. Longgar supaya bot aktif ikut pasar.
 		const free = p.money - reserve - 120;
-		if (free >= 40) {
-			const cheap = STOCKS.map((s) => ({ s, price: state.stocks?.[s.sym]?.price ?? s.base })).filter((x) => x.price <= x.s.base * 1.05);
-			if (cheap.length) {
-				const pick = cheap[Math.floor(Math.random() * cheap.length)];
+		if (free >= 60) {
+			const cand = STOCKS.map((s) => ({ s, price: state.stocks?.[s.sym]?.price ?? s.base }))
+				.map((x) => ({ ...x, ratio: x.price / x.s.base }))
+				.filter((x) => x.ratio <= 1.25)
+				.sort((a, b) => a.ratio - b.ratio);
+			if (cand.length) {
+				const pick = cand[0];
 				const qty = Math.floor((free * 0.35) / pick.price);
 				if (qty >= 1 && act({ type: 'stockBuy', sym: pick.s.sym, qty })) return true;
 			}
@@ -105,12 +109,12 @@ function develop(state, p) {
  * @returns {boolean} true kalau state berubah
  */
 export function botStep(state) {
-	if (state.status !== 'playing') return false;
-	// bot menolak ajakan merger (biar tak menggantung sampai kadaluarsa), kapan pun gilirannya
+	// bot menolak ajakan merger (dibentuk di lobby) biar tak menggantung sampai kadaluarsa
 	if (state.mergeOffer) {
 		const target = state.players.find((x) => x.id === state.mergeOffer.to);
 		if (target?.bot) return tryAct(state, target.id, { type: 'mergeReject' });
 	}
+	if (state.status !== 'playing') return false;
 	const p = state.players[state.turn];
 	if (!p?.bot || p.bankrupt) return false;
 	const act = (a) => tryAct(state, p.id, a);

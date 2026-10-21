@@ -195,6 +195,10 @@ export function removePlayer(state, userId) {
 	if (idx < 0) return;
 	const [p] = state.players.splice(idx, 1);
 	log(state, `${p.name} keluar room.`);
+	// kalau dia bagian group, bubarkan: partner kembali solo
+	if (p.teamId) for (const x of state.players) if (x.teamId === p.teamId) x.teamId = null;
+	// batalkan ajakan merger yang melibatkan dia
+	if (state.mergeOffer && (state.mergeOffer.from === p.id || state.mergeOffer.to === p.id)) state.mergeOffer = null;
 	// bot tidak ditinggal sendirian di room tanpa manusia, dan tidak jadi host
 	if (state.players.every((x) => x.bot)) state.players.length = 0;
 	if (state.hostId === userId && state.players.length) {
@@ -709,14 +713,16 @@ export function expireKick(state, now = Date.now()) {
 	return state.kickVote !== k;
 }
 
-// ---------- merger (ajak & setujui) ----------
+// ---------- merger (ajak & setujui, hanya di lobby) ----------
 
 export const MERGE_TIMEOUT_MS = 45_000;
 
 function mergeInvite(state, userId, targetId) {
-	const p = requireActive(state, userId);
+	if (state.status !== 'lobby') fail('Merger hanya bisa dibentuk di lobby sebelum game dimulai.');
+	const p = playerById(state, userId);
+	if (!p) fail('Kamu bukan pemain di room ini.');
 	const target = playerById(state, targetId);
-	if (!target || target.bankrupt) fail('Pemain itu sudah tidak aktif.');
+	if (!target) fail('Pemain tidak ada.');
 	if (target.id === p.id) fail('Tidak bisa merger dengan diri sendiri.');
 	if (p.teamId) fail('Kamu sudah punya group.');
 	if (target.teamId) fail(`${target.name} sudah punya group.`);
@@ -729,10 +735,14 @@ function mergeAccept(state, userId) {
 	const o = state.mergeOffer;
 	if (!o) fail('Tidak ada ajakan merger.');
 	if (o.to !== userId) fail('Ini bukan ajakan untukmu.');
+	if (state.status !== 'lobby') {
+		state.mergeOffer = null;
+		fail('Merger hanya bisa dibentuk di lobby.');
+	}
 	const a = playerById(state, o.from);
 	const b = playerById(state, o.to);
 	state.mergeOffer = null;
-	if (!a || a.bankrupt || !b || b.bankrupt) fail('Ajakan merger tidak berlaku lagi.');
+	if (!a || !b) fail('Ajakan merger tidak berlaku lagi.');
 	if (a.teamId || b.teamId) fail('Salah satu sudah punya group.');
 	const teamId = `team:${a.id}`;
 	a.teamId = teamId;
@@ -1196,10 +1206,11 @@ function judol(state, userId, amount, rng) {
 	addMoney(state, p, delta);
 	// bandar judod sebagai lawan main: pemain menang -> saldo bandar berkurang; pemain kalah -> bertambah
 	state.bandarJudod = (state.bandarJudod ?? 0) - delta;
-	// catat kekalahan judod beruntun (menang/impas = reset) untuk efek layar pemain
+	// catat beruntun judod (kalah & menang) untuk efek layar pemain; lawan jenis mereset yang lain
 	p.judolLoseStreak = delta < 0 ? (p.judolLoseStreak ?? 0) + 1 : 0;
+	p.judolWinStreak = delta > 0 ? (p.judolWinStreak ?? 0) + 1 : 0;
 	state.seq += 1;
-	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, streak: p.judolLoseStreak, reels: judolReels(pct, rng) };
+	state.lastJudol = { seq: state.seq, playerId: p.id, playerName: p.name, bet, pct, delta, streak: p.judolLoseStreak, winStreak: p.judolWinStreak, reels: judolReels(pct, rng) };
 	log(
 		state,
 		`🎰 ${p.name} main judod ${formatRp(bet)}: ${delta >= 0 ? 'menang' : 'kalah'} ${formatRp(Math.abs(delta))} (${pct > 0 ? '+' : ''}${pct}%).`

@@ -25,6 +25,7 @@ import { refreshCityImages, getCityImages } from './cityImages.js';
 import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
 import { botStep, maybeAddBot } from './bot.js';
+import { tickBotAI } from './botAI.js';
 import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 import { config } from './config.js';
 
@@ -184,6 +185,30 @@ export function attachSocket(httpServer) {
 
 	// netizen AI: tiap 5 menit komentar kondisi pemain (butuh AI_API_KEY)
 	setInterval(() => tickNetizen(rooms, (code, feed) => io.to(code).emit('netizen:feed', feed)), 5000).unref?.();
+
+	// bot AI: pemain bot digerakkan LLM untuk saham, nego/jual/terima properti, & chat (butuh AI_API_KEY)
+	const botChat = (code, bot, text) => {
+		const clean = String(text ?? '').trim().slice(0, 300);
+		if (!clean) return;
+		const msg = { t: Date.now(), userId: bot.id, name: bot.name, text: clean };
+		const list = chats.get(code) ?? [];
+		list.push(msg);
+		if (list.length > CHAT_LIMIT) list.shift();
+		chats.set(code, list);
+		io.to(code).emit('chat', msg);
+	};
+	setInterval(
+		() =>
+			tickBotAI(rooms, {
+				recentChat: (code) => chats.get(code) ?? [],
+				sendChat: botChat,
+				onChange: (state) => {
+					persist(state);
+					broadcast(io, state);
+				}
+			}),
+		3000
+	).unref?.();
 
 	// admin: kirim ringkasan semua room ke yang sedang memantau (hanya kalau ada yang nonton)
 	setInterval(() => {

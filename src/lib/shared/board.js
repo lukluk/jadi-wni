@@ -468,8 +468,9 @@ export function playerTodos(state, playerId) {
 }
 
 /**
- * Perkiraan kalau pemain menyerah. Semua aset dijual otomatis: properti di harga beli (digadai: separuh),
- * bangunan di harga jual (separuh biaya bangun), saham di harga sekarang. Hasilnya dipakai menutup tagihan:
+ * Perkiraan kalau pemain menyerah. Semua aset dijual otomatis di HARGA ASLI (bukan obral):
+ * properti di harga beli (digadai: separuh, karena separuhnya sudah dipinjam), bangunan/rumah di
+ * biaya bangun penuh, saham di harga sekarang. Hasilnya dipakai menutup tagihan:
  *   sisa > 0  -> lanjut main hanya dengan uang sisa; sisa <= 0 -> bangkrut.
  * Tanpa tagihan/utang sama sekali, menyerah = keluar dari game (bangkrut).
  */
@@ -483,7 +484,8 @@ export function surrenderPlan(state, p) {
 		if (!ids.has(t.owner)) continue;
 		const tile = TILES[+i];
 		properties += t.mortgaged ? tile.price / 2 : tile.price;
-		if (tile.type === 'property') for (let l = 1; l <= t.level; l++) buildings += buildCost(GROUPS[tile.group].houseCost, l) / 2;
+		// rumah/bangunan dihitung penuh di biaya bangunnya (harga asli), bukan separuh harga jual
+		if (tile.type === 'property') buildings += investedCost(GROUPS[tile.group].houseCost, t.level);
 	}
 	let stocks = 0;
 	for (const m of members) stocks += stockValue(state, m);

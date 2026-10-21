@@ -24,6 +24,7 @@
 		MAX_PLAYERS,
 		formatRp,
 		isKing,
+		ownsGroup,
 		netWorth,
 		surrenderPlan,
 		formatAmt,
@@ -114,6 +115,8 @@
 				play(j.delta > 0 ? 'good' : j.delta < 0 ? 'bad' : 'notif');
 				// kalah judod beruntun (3x+): vignette merah di layar pemain itu sendiri, makin merah makin sering kalah
 				if (j.playerId === me?.id && j.delta < 0 && (j.streak ?? 0) >= 3) flashLose(j.streak);
+				// MENANG judod beruntun (2x+): api menjilat dari avatarmu, makin besar makin panjang streak
+				if (j.playerId === me?.id && j.delta > 0 && (j.winStreak ?? 0) >= 2) flashFlame(j.winStreak);
 			}, 2300),
 			setTimeout(() => {
 				delete juds[pid];
@@ -131,6 +134,75 @@
 		loseFx = { streak, n: (loseFx?.n ?? 0) + 1 };
 		clearTimeout(loseFxTimer);
 		loseFxTimer = setTimeout(() => (loseFx = null), 2000);
+	}
+
+	// efek layar: MENANG judod beruntun (2x+) -> api menjilat dari avatar pemain ke arah kiri,
+	// makin besar makin panjang streak-nya. Berpusat di avatar kartu pemain sendiri.
+	let flameFx = $state(/** @type {{ streak:number, n:number, x:number, y:number, h:number }|null} */ (null));
+	let flameTimer;
+	function flashFlame(streak) {
+		const el = typeof document !== 'undefined' ? document.querySelector(`[data-pid="${me?.id}"] .photo`) : null;
+		const r = el?.getBoundingClientRect();
+		flameFx = {
+			streak,
+			n: (flameFx?.n ?? 0) + 1,
+			// asal api = TEPI KIRI avatar, lalu menjalar ke kiri ke luar area kartu
+			x: r ? r.left : (typeof window !== 'undefined' ? window.innerWidth - 60 : 0),
+			y: r ? r.top + r.height / 2 : (typeof window !== 'undefined' ? window.innerHeight / 2 : 0),
+			h: r ? r.height : 56
+		};
+		clearTimeout(flameTimer);
+		flameTimer = setTimeout(() => (flameFx = null), 4000);
+	}
+
+	// efek layar: satu GRUP warna LENGKAP dikuasai 1 pemain/group -> ledakan partikel dari
+	// properti terakhir yang melengkapi, menyebar menjauh lalu hilang dalam 3 detik.
+	let burst = $state(/** @type {{ x:number, y:number, pieces:any[], n:number }|null} */ (null));
+	let burstTimer;
+	const CONFETTI = ['#ff4d4d', '#ffcf33', '#37d67a', '#4d94ff', '#c86bff', '#ff8a3d', '#2ee6d6', '#ffffff'];
+	function fireBurst(tileIdx) {
+		const el = typeof document !== 'undefined' ? document.querySelector(`[data-tile="${tileIdx}"]`) : null;
+		const r = el?.getBoundingClientRect();
+		if (!r) return;
+		const N = 30;
+		const pieces = Array.from({ length: N }, (_, i) => {
+			const ang = (Math.PI * 2 * i) / N + Math.random() * 0.35;
+			const dist = 85 + Math.random() * 150;
+			return {
+				dx: Math.cos(ang) * dist,
+				dy: Math.sin(ang) * dist,
+				color: CONFETTI[i % CONFETTI.length],
+				spin: (Math.random() < 0.5 ? -1 : 1) * (360 + Math.random() * 540),
+				dur: 2 + Math.random() * 0.9,
+				delay: Math.random() * 0.12,
+				w: 5 + Math.random() * 4,
+				h: 8 + Math.random() * 6
+			};
+		});
+		burst = { x: r.left + r.width / 2, y: r.top + r.height / 2, pieces, n: (burst?.n ?? 0) + 1 };
+		clearTimeout(burstTimer);
+		burstTimer = setTimeout(() => (burst = null), 3000);
+	}
+	/** key penguasa grup (teamId/ownerId) kalau grup lengkap dikuasai, selain itu null */
+	function groupHolderKey(state, group) {
+		const tiles = TILES.filter((t) => t.group === group);
+		const owner = state.tiles?.[tiles[0].i]?.owner;
+		if (!owner || !ownsGroup(state, owner, group)) return null;
+		const pl = state.players.find((x) => x.id === owner);
+		return pl?.teamId ?? owner;
+	}
+	/** deteksi grup yang BARU lengkap -> ledakan dari properti yang baru pindah tangan */
+	function detectGroupComplete(prev, next) {
+		if (!prev?.tiles) return;
+		for (const g of Object.keys(GROUPS)) {
+			const now = groupHolderKey(next, g);
+			if (now && now !== groupHolderKey(prev, g)) {
+				const tiles = TILES.filter((t) => t.group === g);
+				const changed = tiles.find((t) => prev.tiles?.[t.i]?.owner !== next.tiles?.[t.i]?.owner) ?? tiles[tiles.length - 1];
+				fireBurst(changed.i);
+				return; // satu ledakan per pembaruan sudah cukup
+			}
+		}
 	}
 	let freshTimer;
 	const holdMoney = $derived(rolling || moving || !!pendingCard || cardFresh);
@@ -367,10 +439,10 @@
 		game?.status === 'playing' && !!myPlayer && !myPlayer.bankrupt && !kv && game.players.filter((x) => !x.bankrupt).length >= 3
 	);
 
-	// ---------- merger (ajak jadi 1 group) ----------
-	/** aku boleh mengajak pemain lain merger? (playing, aku aktif & belum punya group, tak ada ajakan berjalan) */
+	// ---------- merger (ajak jadi 1 group — hanya di lobby) ----------
+	/** aku boleh mengajak pemain lain merger? (di lobby, aku pemain & belum punya group, tak ada ajakan berjalan) */
 	const canInviteMerge = $derived(
-		game?.status === 'playing' && !!myPlayer && !myPlayer.bankrupt && !myPlayer.teamId && !game.mergeOffer
+		game?.status === 'lobby' && !!myPlayer && !myPlayer.teamId && !game.mergeOffer
 	);
 	/** partner se-group-ku (kalau sudah merger) */
 	const myTeammate = $derived(
@@ -513,6 +585,7 @@
 			if (st.now) clockOffset = st.now - Date.now();
 			if (game && st.turn !== game.turn) remote = null;
 			stateSounds(game, st);
+			if (game) detectGroupComplete(game, st);
 			game = st;
 		};
 		const onChat = (m) => {
@@ -780,9 +853,19 @@
 							canControl={p.id === me?.id || isHost}
 							onControl={(k) => voice?.control(p.id, k)}
 						/>
-						{#if isHost && p.id !== me?.id}
-							<button class="kick" onclick={() => emit('room:kick', { userId: p.id })} aria-label={`Keluarkan ${p.name}`}>✕</button>
-						{/if}
+						<div class="prow-actions">
+							{#if canInviteMerge && p.id !== me?.id && !p.teamId}
+								<button
+									class="kick"
+									title={`Ajak ${p.name} merger jadi 1 group`}
+									aria-label={`Ajak ${p.name} merger jadi 1 group`}
+									onclick={() => confirmAct(`Ajak ${p.name} merger jadi 1 group? Uang & aset kalian jadi bersama, tak saling kena sewa, menang/bangkrut bareng. (Hanya bisa sebelum game mulai.)`, { type: 'mergeInvite', target: p.id })}
+								>🤝</button>
+							{/if}
+							{#if isHost && p.id !== me?.id}
+								<button class="kick" onclick={() => emit('room:kick', { userId: p.id })} aria-label={`Keluarkan ${p.name}`}>✕</button>
+							{/if}
+						</div>
 					</div>
 				{/each}
 			</div>
@@ -953,14 +1036,6 @@
 							aria-label={`Voting keluarkan ${p.name}`}
 							onclick={() => confirmAct(`Ajukan voting untuk mengeluarkan ${p.name}? Butuh 70% pemain lain setuju.`, { type: 'kickStart', target: p.id })}
 						>🗳️</button>
-					{/if}
-					{#if canInviteMerge && p.id !== me?.id && !p.bankrupt && !p.teamId}
-						<button
-							class="merge-invite"
-							title={`Ajak ${p.name} merger jadi 1 group`}
-							aria-label={`Ajak ${p.name} merger jadi 1 group`}
-							onclick={() => confirmAct(`Ajak ${p.name} merger jadi 1 group? Uang & aset kalian jadi bersama, tak saling kena sewa, menang/bangkrut bareng.`, { type: 'mergeInvite', target: p.id })}
-						>🤝</button>
 					{/if}
 					</div>
 				{/each}
@@ -1268,6 +1343,42 @@
 	{/key}
 {/if}
 
+{#if flameFx}
+	{#key flameFx.n}
+		{@const lvl = Math.min(5, Math.max(2, flameFx.streak))}
+		<div class="flame-fx lvl-{lvl}" style:--x="{flameFx.x}px" style:--y="{flameFx.y}px" style:--h="{flameFx.h}px" style:--lvl={lvl} aria-hidden="true">
+			<span class="flame-core"></span>
+			{#each Array(4 + lvl * 4) as _, i (i)}
+				<span class="flame" style:--i={i} style:--r={(i * 2654435761 % 1000) / 1000}></span>
+			{/each}
+			{#each Array(4 + lvl * 4) as _, i (i)}
+				<span class="spark" style:--i={i} style:--r={((i * 40503 + 17) % 1000) / 1000}></span>
+			{/each}
+			<span class="flame-streak">🔥 {lvl}x beruntun!</span>
+		</div>
+	{/key}
+{/if}
+
+{#if burst}
+	{#key burst.n}
+		<div class="burst-fx" style:--x="{burst.x}px" style:--y="{burst.y}px" aria-hidden="true">
+			{#each burst.pieces as p, i (i)}
+				<span
+					class="confetti"
+					style:--tx="{p.dx}px"
+					style:--ty="{p.dy}px"
+					style:--spin="{p.spin}deg"
+					style:background={p.color}
+					style:width="{p.w}px"
+					style:height="{p.h}px"
+					style:animation-duration="{p.dur}s"
+					style:animation-delay="{p.delay}s"
+				></span>
+			{/each}
+		</div>
+	{/key}
+{/if}
+
 {#if winPaper && winner}
 	{@const NAMA = winnerNames.toUpperCase()}
 	<div class="paper-backdrop" role="dialog" aria-modal="true" aria-label="Koran kemenangan" onclick={() => (winPaper = false)}>
@@ -1476,21 +1587,10 @@
 		cursor: pointer;
 		opacity: 0.85;
 	}
-	.merge-invite {
-		position: absolute;
-		top: -6px;
-		left: -6px;
-		width: 26px;
-		height: 26px;
-		font-size: 0.8rem;
-		cursor: pointer;
-		opacity: 0.85;
-		border: 2px solid var(--ink);
-		background: #fff;
-		border-radius: 50%;
-	}
-	.merge-invite:hover {
-		opacity: 1;
+	.prow-actions {
+		display: flex;
+		gap: 0.3rem;
+		align-items: center;
 	}
 	.merge-pop {
 		background: #e7f0ff;
@@ -2598,6 +2698,142 @@
 	}
 	@media (prefers-reduced-motion: reduce) {
 		.lose-vignette { animation-duration: 2s; }
+	}
+
+	/* ===== api menang judod beruntun: menjilat dari avatar ke arah kiri ===== */
+	.flame-fx {
+		position: fixed;
+		left: var(--x);
+		top: var(--y);
+		--sz: calc(var(--h) * (0.55 + var(--lvl) * 0.16));
+		--reach: calc(var(--h) * (2.2 + var(--lvl) * 1.7));
+		pointer-events: none;
+		z-index: 60;
+		animation: flame-fade 4s linear forwards;
+	}
+	@keyframes flame-fade {
+		0%, 84% { opacity: 1; }
+		100% { opacity: 0; }
+	}
+	.flame-core {
+		position: absolute;
+		left: 0;
+		top: 0;
+		/* inti putih-panas memanjang ke kiri (overexposed), seperti di referensi */
+		width: calc(var(--sz) * 2.2);
+		height: calc(var(--sz) * 1.1);
+		margin: calc(var(--sz) * -0.55) 0 0 calc(var(--sz) * -1.7);
+		border-radius: 50%;
+		background: radial-gradient(ellipse 60% 50% at 70% 50%, #fff 0%, #fff3bf 28%, rgba(255, 150, 45, 0.7) 55%, transparent 78%);
+		filter: blur(3px);
+		mix-blend-mode: screen;
+		animation: flame-core-puls 0.2s ease-in-out infinite alternate;
+	}
+	@keyframes flame-core-puls {
+		from { transform: scale(0.88); }
+		to { transform: scale(1.12); }
+	}
+	.flame {
+		position: absolute;
+		left: 0;
+		top: 0;
+		/* lidah api memanjang horizontal, meruncing ke kiri (ke luar avatar) */
+		width: calc(var(--sz) * 1.9);
+		height: var(--sz);
+		margin: calc(var(--sz) / -2) 0 0 calc(var(--sz) * -1.9);
+		border-radius: 60% 40% 45% 55% / 55% 50% 50% 45%;
+		background: linear-gradient(to left, rgba(255, 250, 205, 0.95), rgba(255, 170, 50, 0.9) 32%, rgba(255, 80, 22, 0.6) 62%, rgba(200, 30, 10, 0) 92%);
+		filter: blur(calc(var(--sz) * 0.045));
+		mix-blend-mode: screen;
+		animation: flame-lick calc(0.72s + var(--r) * 0.55s) ease-out calc(var(--i) * 0.05s) infinite;
+	}
+	/* menjalar ke KIRI dari tepi avatar, wobble vertikal kecil, meruncing & memudar di ujung */
+	@keyframes flame-lick {
+		0% { transform: translate(0, 0) scaleX(0.4) scaleY(0.6); opacity: 0; }
+		20% { opacity: 1; }
+		100% {
+			transform: translate(calc(var(--reach) * -1 * (0.6 + var(--r) * 0.55)), calc((var(--r) - 0.5) * var(--h) * 0.7)) scaleX(calc(1.1 + var(--r) * 0.7)) scaleY(calc(0.5 + var(--r) * 0.4));
+			opacity: 0;
+		}
+	}
+	/* bara/percikan api: titik terang kecil yang melesat ke kiri lalu padam */
+	.spark {
+		position: absolute;
+		left: 0;
+		top: 0;
+		width: calc(var(--sz) * 0.16);
+		height: calc(var(--sz) * 0.16);
+		margin: calc(var(--sz) * -0.08) 0 0 calc(var(--sz) * -0.08);
+		border-radius: 50%;
+		background: radial-gradient(circle, #fff, #ffd27a 45%, rgba(255, 140, 30, 0) 72%);
+		box-shadow: 0 0 calc(var(--sz) * 0.18) calc(var(--sz) * 0.04) rgba(255, 180, 70, 0.75);
+		mix-blend-mode: screen;
+		animation: spark-fly calc(0.6s + var(--r) * 0.7s) ease-out calc(var(--i) * 0.07s) infinite;
+	}
+	@keyframes spark-fly {
+		0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+		12% { opacity: 1; }
+		100% {
+			transform: translate(calc(var(--reach) * -1 * (0.5 + var(--r) * 0.7)), calc((var(--r) - 0.5) * var(--h) * 1.7)) scale(0.25);
+			opacity: 0;
+		}
+	}
+	.flame-streak {
+		position: absolute;
+		left: 0;
+		top: calc(var(--h) * -0.95);
+		transform: translateX(-50%);
+		white-space: nowrap;
+		font-weight: 800;
+		font-size: calc(0.72rem + var(--lvl) * 0.09rem);
+		color: #fff;
+		text-shadow: 0 0 8px #ff7a1a, 0 0 3px #ffcf5a, 0 1px 2px #000;
+		animation: flame-label 4s ease-out forwards;
+	}
+	@keyframes flame-label {
+		0% { opacity: 0; transform: translate(-50%, 8px) scale(0.8); }
+		10% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+		85% { opacity: 1; }
+		100% { opacity: 0; transform: translate(-50%, -6px); }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.flame { animation-iteration-count: 3; }
+	}
+
+	/* ===== confetti perayaan: satu grup warna lengkap dikuasai ===== */
+	.burst-fx {
+		position: fixed;
+		left: var(--x);
+		top: var(--y);
+		z-index: 58;
+		pointer-events: none;
+		animation: burst-fade 3s linear forwards;
+	}
+	@keyframes burst-fade {
+		0%, 82% { opacity: 1; }
+		100% { opacity: 0; }
+	}
+	/* kepingan confetti warna-warni: menyebar menjauh dari properti terakhir, berputar, lalu jatuh & memudar */
+	.confetti {
+		position: absolute;
+		left: 0;
+		top: 0;
+		margin: -4px 0 0 -3px;
+		border-radius: 1px;
+		box-shadow: 0 0 1px rgba(0, 0, 0, 0.3);
+		animation-name: confetti-fly;
+		animation-timing-function: cubic-bezier(0.12, 0.6, 0.3, 1);
+		animation-fill-mode: forwards;
+		will-change: transform, opacity;
+	}
+	@keyframes confetti-fly {
+		0% { transform: translate(0, 0) rotate(0deg) scale(0.5); opacity: 0; }
+		10% { opacity: 1; }
+		75% { opacity: 1; }
+		100% { transform: translate(var(--tx), calc(var(--ty) + 48px)) rotate(var(--spin)) scale(0.95); opacity: 0; }
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.confetti { animation-duration: 1.2s !important; }
 	}
 
 	/* ===== koran kemenangan (full page) ===== */

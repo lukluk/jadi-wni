@@ -81,3 +81,50 @@ test('bot menyerah kalau tagihan sewa tak terbayar dan tak punya apa-apa', () =>
 	for (let i = 0; i < 10 && !bot.bankrupt && s.phase === 'rent'; i++) botStep(s);
 	assert.equal(bot.bankrupt || s.phase !== 'rent', true);
 });
+
+test('bot aktif main saham: sempat memegang saham selama permainan', () => {
+	const rng = seeded(42);
+	const s = createGame('SIMSTK', { id: 'h', name: 'Host' });
+	maybeAddBot(s, s.createdAt + BOT_JOIN_AFTER_MS, rng);
+	startGame(s, rng);
+	const human = s.players.find((p) => !p.bot);
+	const bot = s.players.find((p) => p.bot);
+	const act = (a) => {
+		try {
+			applyAction(s, human.id, a, rng);
+			return true;
+		} catch (e) {
+			if (e instanceof GameError) return false;
+			throw e;
+		}
+	};
+	let everHeldStock = false;
+	for (let i = 0; i < 6000 && s.status === 'playing'; i++) {
+		const cur = s.players[s.turn];
+		if (cur.bot) botStep(s);
+		else if (s.phase === 'rent') act({ type: 'payRent' }) || act({ type: 'bankrupt' });
+		else if (s.phase === 'buy') act({ type: 'buy' }) || act({ type: 'skip' });
+		else if (s.phase === 'roll') act({ type: 'roll' }) || act({ type: 'bankrupt' });
+		else act({ type: 'endTurn' }) || act({ type: 'bankrupt' });
+		if (Object.keys(bot.stocks ?? {}).length > 0) everHeldStock = true;
+	}
+	assert.ok(everHeldStock, 'bot sempat membeli & memegang saham');
+});
+
+test('botAI: tanpa AI_API_KEY jadi no-op (tidak memanggil callback apa pun)', async () => {
+	const { tickBotAI, botAIEnabled } = await import('../server/botAI.js');
+	const saved = process.env.AI_API_KEY;
+	delete process.env.AI_API_KEY; // config.js sudah termuat; botAIEnabled() baca live
+	assert.equal(botAIEnabled(), false);
+	const s = createGame('AIROOM', { id: 'h', name: 'Host' });
+	maybeAddBot(s, s.createdAt + BOT_JOIN_AFTER_MS);
+	startGame(s);
+	let called = false;
+	tickBotAI(new Map([[s.code, s]]), {
+		recentChat: () => { called = true; return []; },
+		sendChat: () => { called = true; },
+		onChange: () => { called = true; }
+	});
+	assert.equal(called, false, 'tidak ada callback terpanggil saat AI mati');
+	if (saved !== undefined) process.env.AI_API_KEY = saved; // pulihkan env
+});

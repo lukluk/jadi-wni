@@ -31,6 +31,13 @@ function newGame(n = 4, rng = Math.random) {
 	return s;
 }
 
+/** room di lobby (belum mulai) dengan n pemain — untuk menguji merger yang hanya boleh di lobby */
+function newLobby(n = 4) {
+	const s = createGame('TEST', users[0]);
+	for (const u of users.slice(1, n)) addPlayer(s, u);
+	return s;
+}
+
 /** Bot sederhana: beli kalau mampu, bangun kalau bisa, gadai kalau minus, bangkrut kalau mentok. */
 function botTurn(s, rng) {
 	const p = s.players[s.turn];
@@ -569,29 +576,42 @@ test('richestId: raja = kekayaan bersih tertinggi, tidak ada kalau seri', () => 
 
 // ---------- merger (2 pemain jadi 1 group) ----------
 
-/** bentuk group a+b lewat aksi ajak & setujui; kembalikan { a, b } */
+/** bentuk group a+b langsung pada game yang sudah jalan (helper tes mekanik) */
 function mergeAB(s) {
 	const a = s.players.find((p) => p.id === 'a');
 	const b = s.players.find((p) => p.id === 'b');
-	applyAction(s, a.id, { type: 'mergeInvite', target: b.id });
-	applyAction(s, b.id, { type: 'mergeAccept' });
+	const teamId = `team:${a.id}`;
+	a.teamId = teamId;
+	b.teamId = teamId;
+	const pool = a.money + b.money;
+	a.money = pool;
+	b.money = pool; // kas bersama (di-mirror)
 	return { a, b };
 }
 
-test('merger: ajak & setujui menggabung kas jadi kas bersama', () => {
-	const s = newGame(2);
+test('merger: hanya bisa di lobby — ajak & setujui menggabung kas', () => {
+	const s = newLobby(2);
 	const a = s.players.find((p) => p.id === 'a');
 	const b = s.players.find((p) => p.id === 'b');
 	a.money = 1000;
 	b.money = 400;
-	mergeAB(s);
+	applyAction(s, a.id, { type: 'mergeInvite', target: b.id });
+	applyAction(s, b.id, { type: 'mergeAccept' });
 	assert.ok(a.teamId && a.teamId === b.teamId, 'teamId kedua pemain sama');
 	assert.equal(a.money, 1400, 'kas bersama = gabungan');
 	assert.equal(b.money, 1400, 'kedua kartu menampilkan kas bersama');
-	// belanja oleh salah satu memotong kas bersama keduanya
+	// setelah game mulai, belanja salah satu memotong kas bersama keduanya
+	startGame(s);
 	s.tiles[1] = { owner: a.id, level: 0, mortgaged: false };
 	applyAction(s, a.id, { type: 'mortgage', tile: 1 }); // +price/2 ke kas bersama
 	assert.equal(a.money, b.money, 'kas tetap sinkron setelah transaksi');
+});
+
+test('merger: tidak bisa dibentuk saat game sudah berjalan', () => {
+	const s = newGame(2);
+	const a = s.players.find((p) => p.id === 'a');
+	const b = s.players.find((p) => p.id === 'b');
+	assert.throws(() => applyAction(s, a.id, { type: 'mergeInvite', target: b.id }), GameError);
 });
 
 test('merger: tidak saling kena sewa dengan anggota se-group', () => {
@@ -668,7 +688,7 @@ test('merger: bangkrut sehidup-semati (satu kena, dua-duanya bangkrut)', () => {
 });
 
 test('merger: ajakan ditolak & kadaluarsa membersihkan tawaran', () => {
-	const s = newGame(2);
+	const s = newLobby(2);
 	const a = s.players.find((p) => p.id === 'a');
 	const b = s.players.find((p) => p.id === 'b');
 	// ditolak
@@ -741,4 +761,14 @@ test('merger: mahkota raja muncul untuk group terkaya (di kedua anggota)', () =>
 	assert.equal(isKing(s, a.id), true, 'anggota A pakai mahkota');
 	assert.equal(isKing(s, b.id), true, 'anggota B pakai mahkota');
 	assert.equal(isKing(s, c.id), false, 'lawan tidak pakai mahkota');
+});
+
+test('menyerah: rumah dihitung di harga asli bangun (penuh, bukan separuh obral)', () => {
+	const s = newGame(2, seeded(11));
+	const visitor = s.players[1];
+	// Menteng (petak 37, grup navy, houseCost 200) dengan 2 rumah
+	s.tiles[37] = { owner: visitor.id, level: 2, mortgaged: false };
+	const plan = surrenderPlan(s, visitor);
+	assert.equal(plan.buildings, 400, 'invested 200+200 dihitung penuh (bukan 200 separuh)');
+	assert.equal(plan.properties, TILES[37].price, 'properti di harga beli penuh');
 });
