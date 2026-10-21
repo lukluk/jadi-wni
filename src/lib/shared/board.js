@@ -412,14 +412,30 @@ export function netWorth(state, p) {
 	return total;
 }
 
-/** id pemain "raja": kekayaan bersih tertinggi (tunggal, tidak seri) saat game berjalan */
+/**
+ * id pemain "raja": kekayaan bersih tertinggi (tunggal, tidak seri) saat game berjalan.
+ * Satu entitas per group — anggota se-group berbagi kekayaan jadi tidak saling seri;
+ * kalau group yang terkaya, kembalikan wakilnya (lihat isKing untuk mahkota di kedua anggota).
+ */
 export function richestId(state) {
 	if (state.status !== 'playing') return null;
-	const ranked = state.players
-		.filter((p) => !p.bankrupt)
-		.map((p) => ({ id: p.id, w: netWorth(state, p) }))
-		.sort((a, b) => b.w - a.w);
+	const seen = new Set();
+	const ranked = [];
+	for (const p of state.players) {
+		if (p.bankrupt) continue;
+		const key = p.teamId ?? p.id;
+		if (seen.has(key)) continue; // hitung group sekali
+		seen.add(key);
+		ranked.push({ id: p.id, w: netWorth(state, p) });
+	}
+	ranked.sort((a, b) => b.w - a.w);
 	return ranked.length > 1 && ranked[0].w > ranked[1].w ? ranked[0].id : null;
+}
+
+/** apakah pemain ini "raja" — termasuk anggota se-group dari si terkaya (mahkota di keduanya) */
+export function isKing(state, playerId) {
+	const kid = richestId(state);
+	return !!kid && (kid === playerId || sameTeamOf(state, kid, playerId));
 }
 
 /**

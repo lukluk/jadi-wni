@@ -23,7 +23,7 @@
 		MIN_PLAYERS,
 		MAX_PLAYERS,
 		formatRp,
-		richestId,
+		isKing,
 		netWorth,
 		surrenderPlan,
 		formatAmt,
@@ -1027,7 +1027,7 @@
 		<button class="card-pop {card.deck}" onclick={() => (card = null)} aria-live="polite">
 			<span class="card-kind">{card.deck === 'musibah' ? '⚡ Musibah' : card.deck === 'tax' ? '🧾 Pajak' : '🍀 Takdir'}</span>
 			{#each game.players.filter((x) => x.id === card.playerId) as who (who.id)}
-				<span class="card-ava" title={who.name}><Avatar p={who} />{#if richestId(game) === who.id}<span class="card-crown">👑</span>{/if}</span>
+				<span class="card-ava" title={who.name}><Avatar p={who} />{#if isKing(game, who.id)}<span class="card-crown">👑</span>{/if}</span>
 			{/each}
 			<span class="card-who">{card.playerName}</span>
 			<span class="card-text">{card.text}{#if card.amount} <strong>-{formatAmt(card.amount)}</strong>{/if}</span>

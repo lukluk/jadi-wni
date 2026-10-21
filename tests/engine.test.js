@@ -13,7 +13,7 @@ import {
 	expireKick,
 	expireMerge
 } from '../server/game/engine.js';
-import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, surrenderPlan, START_MONEY, STOCKS, usahaKey, netWorth, ownsGroup, WIN_NETWORTH } from '../src/lib/shared/board.js';
+import { TILES, MAX_LEVEL, OKB_LEVEL, CARDS, richestId, isKing, surrenderPlan, START_MONEY, STOCKS, usahaKey, netWorth, ownsGroup, WIN_NETWORTH } from '../src/lib/shared/board.js';
 
 function seeded(seed) {
 	return () => {
@@ -727,4 +727,18 @@ test('rungkat: join ulang hanya boleh sekali', () => {
 	victim.bankrupt = true;
 	victim.money = 0;
 	assert.throws(() => requestJoin(s, { id: victim.id, name: victim.name }), GameError, 'join ulang kedua ditolak');
+});
+
+test('merger: mahkota raja muncul untuk group terkaya (di kedua anggota)', () => {
+	const s = newGame(3);
+	const { a, b } = mergeAB(s);
+	const c = s.players.find((p) => p.id === 'c');
+	a.money = b.money = 5000; // kas bersama group
+	c.money = 1000;
+	// group jelas terkaya -> bukan seri (dulu null karena a & b dianggap seri)
+	const kid = richestId(s);
+	assert.ok(kid === a.id || kid === b.id, 'raja adalah wakil group terkaya');
+	assert.equal(isKing(s, a.id), true, 'anggota A pakai mahkota');
+	assert.equal(isKing(s, b.id), true, 'anggota B pakai mahkota');
+	assert.equal(isKing(s, c.id), false, 'lawan tidak pakai mahkota');
 });

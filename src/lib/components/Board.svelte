@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, richestId, canBuild, playerTodos } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, formatRp, isKing, canBuild, playerTodos } from '$lib/shared/board.js';
 	import Avatar from './Avatar.svelte';
 	import { play } from '$lib/sound.js';
 	import { onMount } from 'svelte';
@@ -192,7 +192,7 @@
 			};
 		});
 	});
-	const kingId = $derived(richestId(game));
+	const kingOf = $derived((id) => isKing(game, id));
 	const currentId = $derived(game.status === 'playing' ? game.players[game.turn]?.id : null);
 	// catatan tempel (sticky note) rekomendasi untuk pemain ini; kosong = tidak ditampilkan
 	const todos = $derived(game.status === 'playing' ? playerTodos(game, meId) : []);
@@ -287,7 +287,7 @@
 		<span class="token" class:active={p.id === currentId} class:hop={at !== p.pos} style={tokenStyle(p, at, k, n)} title={p.name}>
 			<Avatar {p} />
 		</span>
-		{#if p.id === kingId}<span class="crown" class:hop={at !== p.pos} style={tokenStyle(p, at, k, n)} aria-hidden="true">👑</span>{/if}
+		{#if kingOf(p.id)}<span class="crown" class:hop={at !== p.pos} style={tokenStyle(p, at, k, n)} aria-hidden="true">👑</span>{/if}
 	{/each}
 </div>
 

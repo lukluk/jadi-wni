@@ -1,6 +1,6 @@
 <script>
 	import { untrack } from 'svelte';
-	import { TILES, formatRp, formatAmt, netWorth, richestId } from '$lib/shared/board.js';
+	import { TILES, formatRp, formatAmt, netWorth, isKing } from '$lib/shared/board.js';
 	import Avatar from './Avatar.svelte';
 
 	/** @type {{ p:any, game:any, isTurn:boolean, isMe:boolean, online:boolean, isHost:boolean, speaking?:boolean, inVoice?:boolean, hold?:boolean, salary?:{id:string, amount:number, n:number}|null }} */
@@ -56,7 +56,7 @@
 		untrack(() => flash(salary.amount));
 	});
 
-	const king = $derived(richestId(game) === p.id);
+	const king = $derived(isKing(game, p.id));
 	// partner se-group (merger) kalau ada
 	const teammate = $derived(p.teamId ? game.players.find((x) => x.id !== p.id && x.teamId === p.teamId) ?? null : null);
 	const owned = $derived(Object.values(game.tiles).filter((t) => t.owner === p.id).length);
