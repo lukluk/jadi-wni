@@ -9,6 +9,7 @@ import {
 	requestJoin,
 	approveJoin,
 	rejectJoin,
+	setAllowMerge,
 	startGame,
 	applyAction,
 	forceSkip,
@@ -24,7 +25,7 @@ import { TOKENS } from '../src/lib/shared/board.js';
 import { refreshCityImages, getCityImages } from './cityImages.js';
 import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
-import { botStep, maybeAddBot } from './bot.js';
+import { botStep, maybeAddBot, addBot } from './bot.js';
 import { tickBotAI } from './botAI.js';
 import { tickNetizen, feedOf, netizenEnabled } from './netizen.js';
 import { config } from './config.js';
@@ -364,11 +365,23 @@ export function attachSocket(httpServer) {
 			}, ack)
 		);
 
+		socket.on('room:addBot', (payload, ack) =>
+			mutate((state) => {
+				if (state.hostId !== user.id) throw new GameError('Hanya host yang bisa menambah bot.');
+				if (state.status !== 'lobby') throw new GameError('Game sudah dimulai.');
+				addBot(state, payload?.name);
+			}, ack)
+		);
+
 		socket.on('game:start', (_p, ack) =>
 			mutate((state) => {
 				if (state.hostId !== user.id) throw new GameError('Hanya host yang bisa memulai.');
 				startGame(state);
 			}, ack)
+		);
+
+		socket.on('room:allowMerge', (payload, ack) =>
+			mutate((state) => setAllowMerge(state, user.id, payload?.on), ack)
 		);
 
 		socket.on('room:knockout', (payload, ack) =>

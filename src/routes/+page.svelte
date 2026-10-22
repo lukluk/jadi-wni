@@ -38,7 +38,7 @@
 
 <main>
 	<section class="hero">
-		<p class="badge">Monopoli online · 2–6 pemain</p>
+		<p class="badge">Monopoli online · 2–8 pemain</p>
 		<div class="ktp" aria-label="Kartu identitas permainan">
 			<div class="ktp-head">
 				<span>PROVINSI SERBA ADA</span>

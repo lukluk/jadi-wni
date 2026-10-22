@@ -1,6 +1,6 @@
 // Bot AI: pemain komputer yang ikut room kalau host sendirian > 1 menit, lalu main seperti pemain biasa
 // (beli properti, bangun rumah, gadai/tebus, jual-beli saham, buka usaha, bayar sewa, keluar Ruang Sidang, menyerah kalau terjepit).
-import { TILES, GROUPS, STOCKS, USAHA, JAIL_FINE, maxLevelOf, buildCost, MAX_PLAYERS } from '../src/lib/shared/board.js';
+import { TILES, GROUPS, STOCKS, USAHA, JAIL_FINE, maxLevelOf, buildCost, maxPlayers } from '../src/lib/shared/board.js';
 import { addPlayer, applyAction, redeemCost, GameError } from './game/engine.js';
 
 export const BOT_JOIN_AFTER_MS = 60_000;
@@ -12,13 +12,41 @@ const BOT_NAMES = ['Rudi', 'Siti', 'Joko', 'Dewi', 'Agus', 'Wati', 'Bambang', 'R
  */
 export function maybeAddBot(state, now = Date.now(), rng = Math.random) {
 	if (state.status !== 'lobby' || state.botOffered) return false;
-	if (state.players.length !== 1 || state.players.length >= MAX_PLAYERS) return false;
+	if (state.players.length !== 1 || state.players.length >= maxPlayers(state)) return false;
 	if (now - state.createdAt < BOT_JOIN_AFTER_MS) return false;
 	state.botOffered = true;
 	const name = `${BOT_NAMES[Math.floor(rng() * BOT_NAMES.length)]} (bot)`;
-	addPlayer(state, { id: `bot:${state.code}:1`, name });
+	addPlayer(state, { id: nextBotId(state), name });
 	state.players[state.players.length - 1].bot = true;
 	return true;
+}
+
+/** id unik untuk bot berikutnya di room ini (bot:<code>:<n>). */
+function nextBotId(state) {
+	const used = new Set(state.players.map((p) => p.id));
+	let n = 1;
+	while (used.has(`bot:${state.code}:${n}`)) n++;
+	return `bot:${state.code}:${n}`;
+}
+
+/**
+ * Host menambah satu bot secara manual, dengan nama pilihannya (opsional — kosong = nama acak).
+ * Nama selalu diberi akhiran "(bot)" supaya pemain lain tahu itu komputer.
+ * @returns {object} pemain bot yang baru ditambahkan
+ */
+export function addBot(state, name, rng = Math.random) {
+	if (state.status !== 'lobby') throw new GameError('Game sudah dimulai.');
+	if (state.players.length >= maxPlayers(state)) throw new GameError(`Room penuh (maks ${maxPlayers(state)} pemain).`);
+	let base = String(name ?? '').trim().replace(/\s+/g, ' ').slice(0, 20);
+	if (!base) base = BOT_NAMES[Math.floor(rng() * BOT_NAMES.length)];
+	const display = /\(bot\)\s*$/i.test(base) ? base : `${base} (bot)`;
+	const id = nextBotId(state);
+	addPlayer(state, { id, name: display });
+	const bot = state.players[state.players.length - 1];
+	bot.bot = true;
+	// host sudah pegang kendali isi room; jangan tambah bot otomatis lagi belakangan
+	state.botOffered = true;
+	return bot;
 }
 
 const tryAct = (state, id, action) => {

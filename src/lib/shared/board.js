@@ -5,8 +5,12 @@ export const START_MONEY = 1500;
 export const SALARY = 200;
 export const JAIL_FINE = 50;
 export const JAIL_INDEX = 13; // pojok kiri-bawah papan 14x8
-export const MAX_PLAYERS = 6;
+export const MAX_PLAYERS = 6; // batas default (semua pemain main solo)
+export const MAX_PLAYERS_TEAM = 8; // batas kalau host mengizinkan merger / team-up
 export const MIN_PLAYERS = 2;
+
+/** batas pemain efektif untuk sebuah room: 8 kalau merger/team-up diizinkan, selain itu 6. */
+export const maxPlayers = (state) => (state?.allowMerge ? MAX_PLAYERS_TEAM : MAX_PLAYERS);
 
 /** Level bangunan. index = level (0 = tanah kosong). */
 export const HOUSE_LEVELS = [
@@ -251,10 +255,12 @@ export const TOKENS = [
 	{ id: 'angkot', icon: '🚐', label: 'Angkot' },
 	{ id: 'ayam', icon: '🐓', label: 'Ayam Jago' },
 	{ id: 'mie', icon: '🍜', label: 'Mie Ayam' },
-	{ id: 'kok', icon: '🏸', label: 'Shuttlecock' }
+	{ id: 'kok', icon: '🏸', label: 'Shuttlecock' },
+	{ id: 'bakso', icon: '🍲', label: 'Bakso' },
+	{ id: 'layang', icon: '🪁', label: 'Layangan' }
 ];
 
-export const PLAYER_COLORS = ['#D7263D', '#1F6FEB', '#2E9E5B', '#F08A24', '#8E44AD', '#0F8B8D'];
+export const PLAYER_COLORS = ['#D7263D', '#1F6FEB', '#2E9E5B', '#F08A24', '#8E44AD', '#0F8B8D', '#E64980', '#8D6E63'];
 
 /**
  * Saham plesetan. Harga per lot dalam juta; vol = volatilitas per giliran.

@@ -21,7 +21,8 @@
 		HOUSE_LEVELS,
 		JAIL_FINE,
 		MIN_PLAYERS,
-		MAX_PLAYERS,
+		MAX_PLAYERS_TEAM,
+		maxPlayers,
 		formatRp,
 		isKing,
 		ownsGroup,
@@ -49,6 +50,7 @@
 	let chatText = $state('');
 	let unread = $state(0);
 	let busy = $state(false);
+	let botName = $state('');
 	let connected = $state(true);
 	let card = $state(/** @type {any} */ (null));
 	let pendingCard = $state(/** @type {any} */ (null));
@@ -342,11 +344,13 @@
 	const inviteUrl = $derived(`${page.url.origin}/room/${data.code}`);
 	const myPlayer = $derived(game?.players.find((p) => p.id === me?.id));
 	const isHost = $derived(game?.hostId === me?.id);
+	// batas pemain efektif: 8 kalau host mengizinkan merger/team-up, selain itu 6
+	const maxP = $derived(maxPlayers(game));
 	// gabung di tengah permainan (perlu persetujuan host)
 	const joinReqs = $derived(game?.joinRequests ?? []);
 	const iRequestedJoin = $derived(joinReqs.some((r) => r.id === me?.id));
 	const canRequestJoin = $derived(
-		game?.status === 'playing' && !myPlayer && game.players.length < MAX_PLAYERS
+		game?.status === 'playing' && !myPlayer && game.players.length < maxP
 	);
 	// pemain rungkat boleh minta main lagi (perlu persetujuan host) — jatah hanya sekali
 	const canRequestRejoin = $derived(game?.status === 'playing' && !!myPlayer && myPlayer.bankrupt && !myPlayer.rejoined);
@@ -442,7 +446,7 @@
 	// ---------- merger (ajak jadi 1 group — hanya di lobby) ----------
 	/** aku boleh mengajak pemain lain merger? (di lobby, aku pemain & belum punya group, tak ada ajakan berjalan) */
 	const canInviteMerge = $derived(
-		game?.status === 'lobby' && !!myPlayer && !myPlayer.teamId && !game.mergeOffer
+		game?.status === 'lobby' && !!game.allowMerge && !!myPlayer && !myPlayer.teamId && !game.mergeOffer
 	);
 	/** partner se-group-ku (kalau sudah merger) */
 	const myTeammate = $derived(
@@ -655,6 +659,10 @@
 		if (!res.ok) showToast(res.error);
 		return res;
 	}
+	async function addBot() {
+		const res = await emit('room:addBot', { name: botName.trim() });
+		if (res?.ok) botName = '';
+	}
 	const act = async (a) => {
 		const res = await emit('game:action', a);
 		if (res?.ok) {
@@ -832,7 +840,7 @@
 		</section>
 
 		<section class="players">
-			<h2>Pemain {game.players.length}/{MAX_PLAYERS}</h2>
+			<h2>Pemain {game.players.length}/{maxP}</h2>
 			<div class="plist">
 				{#each game.players as p (p.id)}
 					<div class="prow">
@@ -872,6 +880,36 @@
 
 			{#if !myPlayer}
 				<p>Kamu menonton room ini.</p>
+			{/if}
+
+			{#if isHost}
+				<label class="setting">
+					<input
+						type="checkbox"
+						checked={!!game.allowMerge}
+						disabled={busy}
+						onchange={(e) => emit('room:allowMerge', { on: e.currentTarget.checked })}
+					/>
+					<span>
+						<strong>Boleh merger / team-up</strong>
+						<small>Dua pemain bisa gabung jadi satu group (kas & aset bersama). Kalau nyala, room bisa sampai {MAX_PLAYERS_TEAM} pemain.</small>
+					</span>
+				</label>
+			{:else if game.allowMerge}
+				<p class="setting-note">🤝 Host mengizinkan merger — kamu bisa gabung jadi satu group dengan pemain lain (lihat tombol 🤝).</p>
+			{/if}
+
+			{#if isHost && game.players.length < maxP}
+				<form class="add-bot" onsubmit={(e) => { e.preventDefault(); addBot(); }}>
+					<input
+						bind:value={botName}
+						maxlength="20"
+						placeholder="Nama bot (opsional)"
+						aria-label="Nama bot"
+					/>
+					<button class="btn" type="submit" disabled={busy}>+ Tambah bot</button>
+				</form>
+				<small class="add-bot-hint">Bot main sendiri sebagai pemain komputer. Beri nama atau kosongkan untuk nama acak.</small>
 			{/if}
 
 			<div class="lobby-actions">
@@ -1112,11 +1150,11 @@
 			{@const rejoin = game.players.some((p) => p.id === r.id)}
 			<div class="join-row">
 				<span class="join-name">{r.name}{#if rejoin} <small>(rungkat)</small>{/if}</span>
-				<button class="btn primary small" disabled={busy || (!rejoin && game.players.length >= MAX_PLAYERS)} onclick={() => emit('room:joinApprove', { userId: r.id })}>{rejoin ? 'Terima main lagi' : 'Setujui'}</button>
+				<button class="btn primary small" disabled={busy || (!rejoin && game.players.length >= maxP)} onclick={() => emit('room:joinApprove', { userId: r.id })}>{rejoin ? 'Terima main lagi' : 'Setujui'}</button>
 				<button class="btn small" disabled={busy} onclick={() => emit('room:joinReject', { userId: r.id })}>Tolak</button>
 			</div>
 		{/each}
-		{#if game.players.length >= MAX_PLAYERS}<small>Room penuh (maks {MAX_PLAYERS}) — tapi pemain rungkat tetap boleh main lagi.</small>{/if}
+		{#if game.players.length >= maxP}<small>Room penuh (maks {maxP}) — tapi pemain rungkat tetap boleh main lagi.</small>{/if}
 	</div>
 {/if}
 
@@ -1552,6 +1590,46 @@
 		border: 2px solid rgba(20, 33, 61, 0.12);
 		border-radius: var(--radius-m);
 		padding: 0.7rem 0.9rem;
+	}
+	.setting {
+		display: flex;
+		align-items: flex-start;
+		gap: 0.6rem;
+		cursor: pointer;
+		background: rgba(255, 253, 246, 0.72);
+		border: 2px solid rgba(20, 33, 61, 0.12);
+		border-radius: var(--radius-m);
+		padding: 0.6rem 0.8rem;
+	}
+	.setting input {
+		margin-top: 0.15rem;
+		width: 1.1rem;
+		height: 1.1rem;
+		flex: none;
+		accent-color: var(--ink);
+	}
+	.setting span {
+		display: grid;
+		gap: 0.15rem;
+	}
+	.setting small {
+		opacity: 0.72;
+	}
+	.setting-note {
+		margin: 0;
+		font-size: 0.85rem;
+		opacity: 0.85;
+	}
+	.add-bot {
+		display: flex;
+		gap: 0.5rem;
+	}
+	.add-bot input {
+		flex: 1;
+		min-width: 0;
+	}
+	.add-bot-hint {
+		opacity: 0.7;
 	}
 	.players {
 		background: rgba(255, 253, 246, 0.92);

@@ -13,6 +13,7 @@ import {
 	JAIL_INDEX,
 	MAX_PLAYERS,
 	MIN_PLAYERS,
+	maxPlayers,
 	maxLevelOf,
 	canSawit,
 	OKB_LEVEL,
@@ -120,6 +121,7 @@ export function createGame(code, host, opts = {}) {
 		status: 'lobby',
 		createdAt: Date.now(),
 		knockout: false, // fitur Knock Out dimatikan
+		allowMerge: false, // merger/team-up (host nyalakan di lobby); nyala = maks 8 pemain
 		koNextAt: null,
 		koWarnUntil: null,
 		paused: false,
@@ -153,7 +155,7 @@ export function createGame(code, host, opts = {}) {
 export function addPlayer(state, user) {
 	if (playerById(state, user.id)) return;
 	if (state.status !== 'lobby') fail('Game sudah dimulai.');
-	if (state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
+	if (state.players.length >= maxPlayers(state)) fail(`Room penuh (maks ${maxPlayers(state)} pemain).`);
 	const usedTokens = new Set(state.players.map((p) => p.token));
 	const usedColors = new Set(state.players.map((p) => p.color));
 	state.players.push({
@@ -215,7 +217,7 @@ export function requestJoin(state, user) {
 	if (existing && !existing.bankrupt) fail('Kamu sudah jadi pemain.');
 	if (existing?.bankrupt && existing.rejoined) fail('Jatah main lagi sudah dipakai (hanya boleh sekali).');
 	// pemain baru butuh slot kosong; pemain rungkat sudah punya slot sendiri
-	if (!existing && state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
+	if (!existing && state.players.length >= maxPlayers(state)) fail(`Room penuh (maks ${maxPlayers(state)} pemain).`);
 	state.joinRequests ??= [];
 	if (state.joinRequests.some((r) => r.id === user.id)) return; // sudah antre
 	state.joinRequests.push({ id: user.id, name: user.name, avatar: user.avatar ?? null, at: Date.now() });
@@ -244,7 +246,7 @@ export function approveJoin(state, hostId, userId) {
 		log(state, `✅ ${req.name} main lagi (disetujui host), dapat modal ${formatRp(START_MONEY)}.`);
 		return;
 	}
-	if (state.players.length >= MAX_PLAYERS) fail(`Room penuh (maks ${MAX_PLAYERS} pemain).`);
+	if (state.players.length >= maxPlayers(state)) fail(`Room penuh (maks ${maxPlayers(state)} pemain).`);
 	const usedTokens = new Set(state.players.map((p) => p.token));
 	const usedColors = new Set(state.players.map((p) => p.color));
 	state.players.push({
@@ -719,6 +721,7 @@ export const MERGE_TIMEOUT_MS = 45_000;
 
 function mergeInvite(state, userId, targetId) {
 	if (state.status !== 'lobby') fail('Merger hanya bisa dibentuk di lobby sebelum game dimulai.');
+	if (!state.allowMerge) fail('Merger belum diizinkan host — nyalakan dulu di setelan room.');
 	const p = playerById(state, userId);
 	if (!p) fail('Kamu bukan pemain di room ini.');
 	const target = playerById(state, targetId);
@@ -753,6 +756,30 @@ function mergeAccept(state, userId) {
 	h.money = pool;
 	syncTeams(state);
 	log(state, `🤝 ${a.name} & ${b.name} merger jadi satu group! Kas bersama ${formatRp(pool)}.`);
+}
+
+/**
+ * Host menyalakan/mematikan mode merger (team-up). Hanya di lobby.
+ * Nyala -> maks 8 pemain. Mematikan saat sudah ada group / pemain > 6 ditolak
+ * supaya tidak ada room yang kelebihan muatan; group yang ada dibubarkan & kas awal dikembalikan.
+ */
+export function setAllowMerge(state, hostId, on) {
+	if (state.hostId !== hostId) fail('Hanya host yang bisa mengubah setelan.');
+	if (state.status !== 'lobby') fail('Setelan hanya bisa diubah di lobby.');
+	on = !!on;
+	if (!on) {
+		if (state.players.length > MAX_PLAYERS)
+			fail(`Keluarkan dulu pemain sampai maksimal ${MAX_PLAYERS} orang sebelum mematikan merger.`);
+		// bubarkan semua group & ajakan yang berjalan, kembalikan kas awal tiap anggota
+		for (const p of state.players)
+			if (p.teamId) {
+				p.teamId = null;
+				p.money = START_MONEY;
+			}
+		state.mergeOffer = null;
+	}
+	state.allowMerge = on;
+	log(state, on ? '🤝 Mode merger/team-up dinyalakan (maks 8 pemain).' : '🤝 Mode merger/team-up dimatikan (maks 6 pemain).');
 }
 
 function mergeReject(state, userId) {

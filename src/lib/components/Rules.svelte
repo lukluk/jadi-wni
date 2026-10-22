@@ -4,7 +4,7 @@
 		START_MONEY,
 		SALARY,
 		JAIL_FINE,
-		MAX_PLAYERS,
+		MAX_PLAYERS_TEAM,
 		MIN_PLAYERS,
 		SAWIT_SALARY_BONUS,
 		SAWIT_COST_MULT,
@@ -42,7 +42,7 @@
 
 				<section>
 					<h4>🧑‍🤝‍🧑 Mulai</h4>
-					<p>{MIN_PLAYERS}–{MAX_PLAYERS} pemain. Tiap pemain mulai dengan <b>{formatRp(START_MONEY)}</b>. Urutan main diacak saat game dimulai. Ajak teman lewat kode room / link undangan di kartu host.</p>
+					<p>{MIN_PLAYERS}–{MAX_PLAYERS_TEAM} pemain (maks 6 tanpa mode merger). Tiap pemain mulai dengan <b>{formatRp(START_MONEY)}</b>. Urutan main diacak saat game dimulai. Ajak teman lewat kode room / link undangan di kartu host.</p>
 				</section>
 
 				<section>
