@@ -2,12 +2,15 @@
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { call, getSocket } from '$lib/socket.js';
-	import { HOUSE_LEVELS } from '$lib/shared/board.js';
+	import { HOUSE_LEVELS, RANKS, rankOf } from '$lib/shared/board.js';
 	import SkyScene from '$lib/components/SkyScene.svelte';
 
 	let { data } = $props();
 
 	const next = $derived(page.url.searchParams.get('next') ?? '/');
+	const leaderboard = $derived(data.leaderboard ?? []);
+	const myRank = $derived(data.myStats ? rankOf(data.myStats.points) : null);
+	const medal = (i) => (i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i + 1}`);
 	let joinCode = $state('');
 	let busy = $state(false);
 	let error = $state('');
@@ -76,9 +79,27 @@
 		{#if data.user}
 			<div class="who">
 				{#if data.user.avatar}<img src={data.user.avatar} alt="" referrerpolicy="no-referrer" />{/if}
-				<span>Halo, <strong>{data.user.name}</strong></span>
+				<span class="who-name">
+					Halo, <strong>{data.user.name}</strong>
+					{#if myRank}
+						<small class="rank-chip" style:--rc={myRank.color} title={`${myRank.points} poin`}>
+							{myRank.icon} {myRank.title}
+						</small>
+					{/if}
+				</span>
 				<form method="POST" action="/auth/logout"><button class="link">Keluar</button></form>
 			</div>
+			{#if myRank}
+				<div class="rank-progress">
+					{#if myRank.next}
+						<div class="rank-bar"><span style:width={`${myRank.progress * 100}%`} style:background={myRank.color}></span></div>
+						<small>{myRank.points} poin · {myRank.toNext} lagi menuju <b>{myRank.next.icon} {myRank.next.title}</b></small>
+					{:else}
+						<small>👑 Pangkat tertinggi — {myRank.points} poin. Kamu benar-benar 9 Naga.</small>
+					{/if}
+					{#if data.myStats.games}<small class="rank-stat">{data.myStats.wins} menang · {data.myStats.games} main{#if data.myStats.globalRank} · peringkat #{data.myStats.globalRank}{/if}</small>{/if}
+				</div>
+			{/if}
 			{#if next !== '/'}
 				<a class="btn primary big" href={next}>Lanjut ke room undangan</a>
 			{/if}
@@ -128,6 +149,45 @@
 			</svg>
 			<span>Bergabung ke komunitas Jadi-WNI</span>
 		</a>
+	</section>
+
+	<section class="ranked" aria-label="Papan peringkat">
+		<div class="ranked-head">
+			<h2>🏆 Papan Peringkat</h2>
+			<p>Kumpulkan poin tiap game selesai dan naik pangkat dari <b>Miskin</b> sampai <b>9 Naga</b>.</p>
+		</div>
+
+		<ol class="ladder" aria-label="Tingkatan pangkat">
+			{#each RANKS as r (r.id)}
+				<li class:me={myRank && myRank.id === r.id} style:--rc={r.color}>
+					<span class="l-ico">{r.icon}</span>
+					<span class="l-title">{r.title}</span>
+					<span class="l-min">{r.min}+ poin</span>
+				</li>
+			{/each}
+		</ol>
+
+		{#if leaderboard.length}
+			<ol class="lb">
+				{#each leaderboard as p, i (p.id)}
+					{@const pr = rankOf(p.points)}
+					<li class:me={data.user && p.id === data.user.id}>
+						<span class="lb-pos" class:top={i < 3}>{medal(i)}</span>
+						{#if p.avatar}<img class="lb-av" src={p.avatar} alt="" referrerpolicy="no-referrer" />{:else}<span class="lb-av ph" aria-hidden="true">{p.name.slice(0, 1).toUpperCase()}</span>{/if}
+						<span class="lb-name">
+							<b>{p.name}</b>
+							<small class="rank-chip sm" style:--rc={pr.color}>{pr.icon} {pr.title}</small>
+						</span>
+						<span class="lb-meta">
+							<b>{p.points}</b> poin
+							<small>{p.wins}🏆 · {p.games} main</small>
+						</span>
+					</li>
+				{/each}
+			</ol>
+		{:else}
+			<p class="lb-empty">Belum ada yang menyelesaikan game. Jadilah yang pertama naik pangkat! 🎲</p>
+		{/if}
 	</section>
 
 	<section class="levels" aria-label="Level rumah">
@@ -465,6 +525,188 @@
 		flex: none;
 	}
 
+	/* ---------- Pangkat & papan peringkat ---------- */
+	.rank-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.25rem;
+		background: color-mix(in srgb, var(--rc) 18%, #fff);
+		color: var(--ink);
+		border: 2px solid var(--rc);
+		border-radius: 999px;
+		padding: 0.05rem 0.5rem;
+		font-size: 0.78rem;
+		font-weight: 800;
+		white-space: nowrap;
+	}
+	.rank-chip.sm {
+		border-width: 1.5px;
+		padding: 0.02rem 0.4rem;
+		font-size: 0.7rem;
+	}
+	.who-name {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.45rem;
+		flex-wrap: wrap;
+	}
+	.rank-progress {
+		display: grid;
+		gap: 0.3rem;
+		margin-top: -0.3rem;
+	}
+	.rank-progress small {
+		font-size: 0.82rem;
+		color: var(--ink-soft);
+	}
+	.rank-stat {
+		font-weight: 700;
+	}
+	.rank-bar {
+		height: 9px;
+		background: var(--line);
+		border: 2px solid var(--ink);
+		border-radius: 999px;
+		overflow: hidden;
+	}
+	.rank-bar span {
+		display: block;
+		height: 100%;
+		border-radius: 999px;
+		transition: width 0.4s ease;
+	}
+	.ranked {
+		grid-column: 1 / -1;
+		margin-top: 1.5rem;
+		background: rgba(255, 253, 246, 0.92);
+		backdrop-filter: blur(6px);
+		border: 2px solid var(--ink);
+		border-radius: var(--radius-m);
+		box-shadow: 8px 8px 0 var(--ink);
+		padding: 1.3rem 1.4rem 1.5rem;
+		display: grid;
+		gap: 1rem;
+	}
+	.ranked-head h2 {
+		margin: 0;
+		font-size: 1.5rem;
+		letter-spacing: -0.02em;
+	}
+	.ranked-head p {
+		margin: 0.25rem 0 0;
+		color: var(--ink-soft);
+		font-size: 0.95rem;
+	}
+	.ladder {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		grid-template-columns: repeat(6, 1fr);
+		gap: 0.5rem;
+	}
+	.ladder li {
+		display: grid;
+		justify-items: center;
+		gap: 0.15rem;
+		text-align: center;
+		padding: 0.6rem 0.3rem;
+		background: color-mix(in srgb, var(--rc) 12%, #fff);
+		border: 2px solid var(--rc);
+		border-radius: var(--radius-s);
+	}
+	.ladder li.me {
+		box-shadow: 0 0 0 3px var(--ink);
+	}
+	.ladder .l-ico {
+		font-size: 1.6rem;
+		line-height: 1;
+	}
+	.ladder .l-title {
+		font-weight: 800;
+		font-size: 0.82rem;
+	}
+	.ladder .l-min {
+		font-size: 0.7rem;
+		color: var(--ink-soft);
+		font-weight: 700;
+	}
+	.lb {
+		list-style: none;
+		margin: 0;
+		padding: 0;
+		display: grid;
+		gap: 0.4rem;
+	}
+	.lb li {
+		display: grid;
+		grid-template-columns: 2rem 2.2rem 1fr auto;
+		align-items: center;
+		gap: 0.6rem;
+		padding: 0.4rem 0.6rem;
+		background: var(--paper);
+		border: 2px solid var(--line);
+		border-radius: var(--radius-s);
+	}
+	.lb li.me {
+		border-color: var(--ink);
+		background: var(--angkot);
+	}
+	.lb-pos {
+		font-weight: 800;
+		text-align: center;
+		font-size: 0.95rem;
+		color: var(--ink-soft);
+	}
+	.lb-pos.top {
+		font-size: 1.3rem;
+	}
+	.lb-av {
+		width: 2.2rem;
+		height: 2.2rem;
+		border-radius: 50%;
+		border: 2px solid var(--ink);
+		object-fit: cover;
+	}
+	.lb-av.ph {
+		display: grid;
+		place-items: center;
+		background: var(--angkot);
+		font-weight: 800;
+	}
+	.lb-name {
+		display: flex;
+		flex-direction: column;
+		gap: 0.15rem;
+		min-width: 0;
+	}
+	.lb-name b {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.lb-name .rank-chip {
+		justify-self: start;
+	}
+	.lb-meta {
+		text-align: right;
+		display: grid;
+		gap: 0.1rem;
+		white-space: nowrap;
+	}
+	.lb-meta b {
+		font-size: 1rem;
+	}
+	.lb-meta small {
+		color: var(--ink-soft);
+		font-size: 0.75rem;
+	}
+	.lb-empty {
+		margin: 0;
+		color: var(--ink-soft);
+		font-weight: 600;
+	}
+
 	/* ---------- Deretan rumah di atas tanah ---------- */
 	.levels {
 		grid-column: 1 / -1;
@@ -514,6 +756,18 @@
 		.dice {
 			right: -6px;
 			font-size: 2.6rem;
+		}
+		.ladder {
+			grid-template-columns: repeat(3, 1fr);
+		}
+	}
+	@media (max-width: 440px) {
+		.ladder {
+			grid-template-columns: repeat(2, 1fr);
+		}
+		.lb li {
+			grid-template-columns: 1.6rem 2rem 1fr auto;
+			gap: 0.4rem;
 		}
 	}
 </style>

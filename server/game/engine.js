@@ -654,6 +654,24 @@ function checkWinner(state) {
 }
 
 
+/**
+ * Peringkat akhir pemain saat game selesai: juara (atau se-group juara) di atas,
+ * selebihnya menurut kekayaan bersih. Dipakai untuk mencatat statistik/pangkat.
+ * @returns {{id:string,name:string,bot:boolean,bankrupt:boolean,networth:number,winner:boolean}[]}
+ */
+export function finalStandings(state) {
+	return state.players
+		.map((p) => ({
+			id: p.id,
+			name: p.name,
+			bot: !!p.bot,
+			bankrupt: !!p.bankrupt,
+			networth: netWorth(state, p),
+			winner: p.id === state.winner || sameTeam(state, p.id, state.winner)
+		}))
+		.sort((a, b) => Number(b.winner) - Number(a.winner) || b.networth - a.networth);
+}
+
 /** waktu menyelesaikan tagihan; +grace untuk animasi dadu/bidak sebelum popup muncul */
 export const RENT_TIMEOUT_MS = 120_000;
 export const RENT_GRACE_MS = 6_000;

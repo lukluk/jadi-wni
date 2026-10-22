@@ -12,6 +12,48 @@ export const MIN_PLAYERS = 2;
 /** batas pemain efektif untuk sebuah room: 8 kalau merger/team-up diizinkan, selain itu 6. */
 export const maxPlayers = (state) => (state?.allowMerge ? MAX_PLAYERS_TEAM : MAX_PLAYERS);
 
+// ---------- Pangkat (ranked) ----------
+// Pangkat pemain berdasarkan total poin yang dikumpulkan dari game yang selesai.
+// Dipakai server (hitung) & client (tampilan ladderboard / profil).
+
+/** Pangkat dari termiskin ke terkaya; `min` = ambang poin kumulatif untuk naik. */
+export const RANKS = [
+	{ id: 'miskin', title: 'Miskin', icon: '🫙', min: 0, color: '#8D6E63' },
+	{ id: 'menengah', title: 'Kaum Menengah', icon: '🛵', min: 100, color: '#2E9E5B' },
+	{ id: 'okb', title: 'OKB', icon: '🤑', min: 300, color: '#F08A24' },
+	{ id: 'kaya', title: 'Kaya', icon: '💰', min: 700, color: '#1F6FEB' },
+	{ id: 'crazyrich', title: 'CrazyRich', icon: '💎', min: 1500, color: '#8E44AD' },
+	{ id: 'naga', title: '9 Naga', icon: '🐉', min: 3000, color: '#D7263D' }
+];
+
+/** Poin per peringkat akhir (di antara pemain manusia); sisanya dapat poin partisipasi. */
+export const PLACE_POINTS = [100, 60, 40, 25, 15, 10];
+export const PARTICIPATION_POINTS = 5;
+
+/** poin untuk peringkat ke-`place` (0 = juara). */
+export const pointsForPlace = (place) => PLACE_POINTS[place] ?? PARTICIPATION_POINTS;
+
+/**
+ * Pangkat untuk sejumlah poin: pangkat sekarang + progres ke pangkat berikutnya.
+ * @param {number} points
+ */
+export function rankOf(points) {
+	const pts = Math.max(0, Math.trunc(points || 0));
+	let idx = 0;
+	for (let i = 0; i < RANKS.length; i++) if (pts >= RANKS[i].min) idx = i;
+	const cur = RANKS[idx];
+	const next = RANKS[idx + 1] ?? null;
+	return {
+		...cur,
+		index: idx,
+		points: pts,
+		next,
+		toNext: next ? next.min - pts : 0,
+		// progres 0..1 di dalam pangkat sekarang (1 kalau sudah pangkat tertinggi)
+		progress: next ? Math.min(1, (pts - cur.min) / (next.min - cur.min)) : 1
+	};
+}
+
 /** Level bangunan. index = level (0 = tanah kosong). */
 export const HOUSE_LEVELS = [
 	{ name: 'Tanah Kosong', short: '', icon: '' },

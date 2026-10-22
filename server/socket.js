@@ -1,7 +1,7 @@
 import { Server } from 'socket.io';
 import { parse as parseCookie } from 'cookie';
 import { randomInt } from 'node:crypto';
-import { getUserBySession, saveRoom, loadRoom, roomExists } from './db.js';
+import { getUserBySession, saveRoom, loadRoom, roomExists, recordGameResult } from './db.js';
 import {
 	createGame,
 	addPlayer,
@@ -19,6 +19,7 @@ import {
 	expireMerge,
 	knockoutTick,
 	publicState,
+	finalStandings,
 	GameError
 } from './game/engine.js';
 import { TOKENS } from '../src/lib/shared/board.js';
@@ -62,7 +63,21 @@ function getRoom(code) {
 	return state;
 }
 
-const persist = (state) => saveRoom(state.code, state.hostId, state);
+/** Catat hasil ke papan peringkat sekali saja saat game selesai. */
+function recordIfEnded(state) {
+	if (state.status !== 'ended' || state.resultRecorded) return;
+	state.resultRecorded = true; // ikut dipersist, jadi tak dobel walau server restart
+	try {
+		recordGameResult(finalStandings(state));
+	} catch (e) {
+		console.error('recordGameResult', e);
+	}
+}
+
+const persist = (state) => {
+	recordIfEnded(state);
+	saveRoom(state.code, state.hostId, state);
+};
 
 function onlineIds(code) {
 	const ids = [...(presence.get(code)?.entries() ?? [])].filter(([, n]) => n > 0).map(([id]) => id);
