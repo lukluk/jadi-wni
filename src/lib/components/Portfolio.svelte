@@ -1,6 +1,6 @@
 <script>
 	import Candles from './Candles.svelte';
-	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf, USAHA, usahaById, usahaPayback, usahaKey } from '$lib/shared/board.js';
+	import { TILES, GROUPS, HOUSE_LEVELS, STOCKS, STOCK_HISTORY, formatRp, candlesOf, USAHA, usahaById, usahaPayback, usahaKey, JUDOL_COOLDOWN_MS } from '$lib/shared/board.js';
 
 	/** @type {{ game:any, meId:string, onAction:(a:any)=>void, onTile:(i:number)=>void }} */
 	let { game, meId, onAction, onTile } = $props();
@@ -41,6 +41,21 @@
 	let bet = $state(10);
 	const betN = $derived(Math.max(0, Math.floor(Number(bet)) || 0));
 	const fraction = (f) => (bet = Math.max(1, Math.floor((me?.money ?? 0) * f)));
+
+	// jeda anti-spam judod: dihitung lokal (server tetap jadi penjaga sebenarnya)
+	let lastBetAt = $state(0);
+	let nowTick = $state(Date.now());
+	$effect(() => {
+		if (lastBetAt + JUDOL_COOLDOWN_MS - nowTick <= 0) return;
+		const t = setTimeout(() => (nowTick = Date.now()), 200);
+		return () => clearTimeout(t);
+	});
+	const judolCd = $derived(Math.max(0, lastBetAt + JUDOL_COOLDOWN_MS - nowTick));
+	function betJudol() {
+		lastBetAt = Date.now();
+		nowTick = lastBetAt;
+		onAction({ type: 'judol', amount: betN });
+	}
 
 	// popup daftar saham untuk beli
 	let showBuy = $state(false);
@@ -180,8 +195,8 @@
 					<button class="btn small" onclick={() => fraction(0.5)}>½</button>
 					<button class="btn small" onclick={() => fraction(1)}>Semua</button>
 				</div>
-				<button class="btn danger-btn" disabled={betN < 1 || betN > me.money} onclick={() => onAction({ type: 'judol', amount: betN })}>
-					🎲 Taruhan {formatRp(betN)}
+				<button class="btn danger-btn" disabled={betN < 1 || betN > me.money || judolCd > 0} onclick={betJudol}>
+					{#if judolCd > 0}⏳ Tunggu {Math.ceil(judolCd / 1000)} dtk{:else}🎲 Taruhan {formatRp(betN)}{/if}
 				</button>
 			</section>
 		{/if}

@@ -22,7 +22,7 @@ import {
 	finalStandings,
 	GameError
 } from './game/engine.js';
-import { TOKENS } from '../src/lib/shared/board.js';
+import { TOKENS, JUDOL_COOLDOWN_MS } from '../src/lib/shared/board.js';
 import { refreshCityImages, getCityImages } from './cityImages.js';
 import { refreshTileLogos } from './tileLogos.js';
 import { autopilotStep } from './autopilot.js';
@@ -417,6 +417,17 @@ export function attachSocket(httpServer) {
 
 		socket.on('game:action', (action, ack) =>
 			mutate((state) => {
+				// anti-spam judod: jeda minimal antar taruhan per pemain
+				if (action?.type === 'judol') {
+					const p = state.players.find((x) => x.id === user.id);
+					const now = Date.now();
+					const since = now - (p?.lastJudolAt ?? 0);
+					if (p?.lastJudolAt && since < JUDOL_COOLDOWN_MS)
+						throw new GameError(`Sabar, tunggu ${Math.ceil((JUDOL_COOLDOWN_MS - since) / 1000)} detik sebelum main judod lagi.`);
+					applyAction(state, user.id, action);
+					if (p) p.lastJudolAt = now; // hanya setelah taruhan berhasil (applyAction tak melempar)
+					return;
+				}
 				applyAction(state, user.id, action);
 				// Sematkan URL foto ke iklan dari cache server, supaya modal iklan
 				// tak bergantung pada fetch /api/city-images di tiap client (bisa kosong

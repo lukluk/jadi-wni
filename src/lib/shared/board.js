@@ -5,6 +5,7 @@ export const START_MONEY = 1500;
 export const SALARY = 200;
 export const JAIL_FINE = 50;
 export const JAIL_INDEX = 13; // pojok kiri-bawah papan 14x8
+export const JUDOL_COOLDOWN_MS = 3000; // jeda antar taruhan judod biar tak di-spam
 export const MAX_PLAYERS = 6; // batas default (semua pemain main solo)
 export const MAX_PLAYERS_TEAM = 8; // batas kalau host mengizinkan merger / team-up
 export const MIN_PLAYERS = 2;
